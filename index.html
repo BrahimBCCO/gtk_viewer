@@ -1,9 +1,10 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GTK File Viewer — Zund Cutting</title>
+<title>GTK + DXF Viewer — Zund Cutting</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap');
 
@@ -14,6 +15,7 @@
     --border: #252b3b;
     --accent: #00e5ff;
     --accent2: #ff3d6b;
+    --accent-gtk: #a8ff78;
     --text: #e4e8f0;
     --muted: #5a6480;
     --panel-w: 270px;
@@ -34,7 +36,7 @@
 
   /* TOP BAR */
   header {
-    display: flex; align-items: center; gap: 12px;
+    display: flex; align-items: center; gap: 10px;
     padding: 0 16px; height: 50px;
     background: var(--surface);
     border-bottom: 1px solid var(--border);
@@ -45,6 +47,7 @@
     letter-spacing: .12em; color: var(--accent); text-transform: uppercase; white-space: nowrap;
   }
   .logo span { color: var(--muted); }
+  .logo .gtk-part { color: var(--accent-gtk); }
   .file-tabs { display: flex; gap: 4px; flex: 1; overflow-x: auto; }
   .file-tab {
     display: flex; align-items: center; gap: 7px;
@@ -55,8 +58,17 @@
   }
   .file-tab:hover { background: var(--surface2); color: var(--text); }
   .file-tab.active { background: var(--surface2); border-color: var(--accent); color: var(--accent); }
+  .file-tab.active.gtk-tab { border-color: var(--accent-gtk); color: var(--accent-gtk); }
   .file-tab .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); opacity: .6; }
+  .file-tab.gtk-tab .dot { background: var(--accent-gtk); }
   .file-tab.active .dot { opacity: 1; box-shadow: 0 0 6px var(--accent); }
+  .file-tab.active.gtk-tab .dot { box-shadow: 0 0 6px var(--accent-gtk); }
+  .file-tab .type-badge {
+    font-size: 9px; padding: 1px 5px; border-radius: 3px;
+    background: rgba(0,229,255,.12); color: var(--accent);
+    font-family: 'Space Mono', monospace; letter-spacing: .05em;
+  }
+  .file-tab.gtk-tab .type-badge { background: rgba(168,255,120,.12); color: var(--accent-gtk); }
   .hdr-btn {
     display: flex; align-items: center; gap: 6px;
     padding: 6px 13px; background: transparent;
@@ -65,9 +77,11 @@
     font-family: 'DM Sans', sans-serif; transition: all .15s; white-space: nowrap;
   }
   .hdr-btn:hover { border-color: var(--accent); color: var(--accent); }
-  .hdr-btn.save:hover { border-color: #a8ff78; color: #a8ff78; }
+  .hdr-btn.gtk:hover { border-color: var(--accent-gtk); color: var(--accent-gtk); }
+  .hdr-btn.save:hover { border-color: var(--accent-gtk); color: var(--accent-gtk); }
   .hdr-btn svg { width: 14px; height: 14px; }
   .hdr-btn:disabled { opacity: .3; cursor: default; pointer-events: none; }
+  .hdr-sep { width: 1px; height: 22px; background: var(--border); flex-shrink: 0; }
 
   /* LAYOUT */
   .main { display: flex; flex: 1; overflow: hidden; }
@@ -88,6 +102,16 @@
     padding: 10px 14px 8px; text-transform: uppercase;
     display: flex; align-items: center; justify-content: space-between;
   }
+
+  /* MODE INDICATOR */
+  .mode-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 9px; padding: 2px 7px; border-radius: 4px;
+    font-family: 'Space Mono', monospace; letter-spacing: .06em;
+    background: rgba(0,229,255,.1); color: var(--accent); border: 1px solid rgba(0,229,255,.2);
+  }
+  .mode-badge.gtk { background: rgba(168,255,120,.1); color: var(--accent-gtk); border-color: rgba(168,255,120,.2); }
+  .mode-badge .dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 
   /* LAYERS */
   .layer-item {
@@ -141,7 +165,7 @@
     color: var(--accent); width: 26px; text-align: right; flex-shrink: 0;
   }
 
-  /* SHAPES */
+  /* SHAPES (GTK - editable) */
   .shape-item {
     display: flex; align-items: center; gap: 6px;
     padding: 4px 14px;
@@ -161,8 +185,14 @@
     transition: border-color .15s, background .15s; min-width: 0;
   }
   .shape-name-input:hover { border-color: var(--border); }
-  .shape-name-input:focus { border-color: var(--accent); background: var(--surface2); color: var(--accent); }
-  .shape-name-input.dirty { color: #a8ff78; }
+  .shape-name-input:focus { border-color: var(--accent-gtk); background: var(--surface2); color: var(--accent-gtk); }
+  .shape-name-input.dirty { color: var(--accent-gtk); }
+  /* SHAPES (DXF - read-only) */
+  .shape-label {
+    flex: 1; font-family: 'Space Mono', monospace; font-size: 11px;
+    color: var(--text); padding: 3px 6px; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
   .locate-btn {
     width: 22px; height: 22px; background: transparent;
     border: 1px solid transparent; border-radius: 4px;
@@ -230,7 +260,15 @@
   }
   .empty-state p { color: var(--muted); font-size: 13px; }
   .empty-state strong { color: var(--text); }
-  #fileInput { display: none; }
+  .empty-hints { display: flex; gap: 12px; }
+  .empty-hint {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border);
+    font-size: 11px; font-family: 'Space Mono', monospace;
+  }
+  .empty-hint.dxf { color: var(--accent); border-color: rgba(0,229,255,.25); background: rgba(0,229,255,.05); }
+  .empty-hint.gtk { color: var(--accent-gtk); border-color: rgba(168,255,120,.25); background: rgba(168,255,120,.05); }
+  #fileInput, #fileInputGTK { display: none; }
   .loading-bar {
     position: absolute; top: 0; left: 0; right: 0; height: 2px;
     background: linear-gradient(90deg, var(--accent), var(--accent2));
@@ -260,29 +298,25 @@
 </style>
 </head>
 <body>
-
 <div class="loading-bar" id="loadingBar"></div>
-
 <header>
-  <div class="logo">GTK<span>/</span>View</div>
+  <div class="logo"><span class="gtk-part">GTK</span><span>+</span>DXF<span>/</span>View</div>
   <div class="file-tabs" id="fileTabs"></div>
-  <button class="hdr-btn" onclick="document.getElementById('fileInput').click()">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-      <polyline points="17 8 12 3 7 8"/>
-      <line x1="12" y1="3" x2="12" y2="15"/>
-    </svg>
+  <button class="hdr-btn gtk" onclick="document.getElementById('fileInputGTK').click()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
     Open GTK
   </button>
   <button class="hdr-btn save" id="saveBtn" onclick="saveGTK()" disabled>
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
-      <polyline points="17 21 17 13 7 13 7 21"/>
-      <polyline points="7 3 7 8 15 8"/>
-    </svg>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
     Save GTK
   </button>
-  <input type="file" id="fileInput" accept=".gtk" multiple>
+  <div class="hdr-sep"></div>
+  <button class="hdr-btn" onclick="document.getElementById('fileInput').click()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+    Open DXF
+  </button>
+  <input type="file" id="fileInput" accept=".dxf" multiple>
+  <input type="file" id="fileInputGTK" accept=".gtk" multiple>
 </header>
 
 <div class="main">
@@ -290,7 +324,10 @@
     <div class="panel-body">
 
       <div class="panel-section">
-        <div class="panel-title">Layers</div>
+        <div class="panel-title">
+          <span>Layers</span>
+          <span id="modeBadge" class="mode-badge" style="display:none"><span class="dot"></span><span id="modeText">DXF</span></span>
+        </div>
         <div id="layerList"></div>
       </div>
 
@@ -300,7 +337,7 @@
           <div class="info-cell"><div class="info-label">WIDTH</div><div class="info-value" id="iW">—</div></div>
           <div class="info-cell"><div class="info-label">HEIGHT</div><div class="info-value" id="iH">—</div></div>
           <div class="info-cell"><div class="info-label">PATHS</div><div class="info-value" id="iP">—</div></div>
-          <div class="info-cell"><div class="info-label">GROUPS</div><div class="info-value" id="iG">—</div></div>
+          <div class="info-cell"><div class="info-label" id="iGLabel">TEXTS</div><div class="info-value" id="iG">—</div></div>
           <div class="info-cell" style="grid-column:1/-1">
             <div class="info-label">FILENAME</div>
             <div class="info-value" id="iFN" style="font-size:10px;word-break:break-all">—</div>
@@ -311,7 +348,7 @@
       <div class="panel-section">
         <div class="panel-title">Options</div>
         <div class="opt-row">
-          <span class="opt-label">Shape names</span>
+          <span class="opt-label" id="labelOptLabel">Shape labels</span>
           <div class="toggle-track on" id="labelTrack" onclick="toggleLabels()"><div class="toggle-thumb"></div></div>
         </div>
         <div class="slider-row">
@@ -323,8 +360,8 @@
 
       <div class="panel-section">
         <div class="panel-title">
-          <span>Shapes</span>
-          <span id="dirtyBadge" style="display:none;font-size:9px;color:#a8ff78;font-family:'Space Mono',monospace">● unsaved</span>
+          <span id="shapesTitle">Shapes</span>
+          <span id="dirtyBadge" style="display:none;font-size:9px;color:var(--accent-gtk);font-family:'Space Mono',monospace">● unsaved</span>
         </div>
         <div id="shapeList"></div>
       </div>
@@ -350,11 +387,14 @@
           <line x1="16" y1="17" x2="8" y2="17"/>
         </svg>
       </div>
-      <p><strong>Drop a .gtk file here</strong></p>
-      <p>or click <strong>Open GTK</strong> above</p>
+      <p>Drop files here or use buttons above</p>
+      <div class="empty-hints">
+        <div class="empty-hint gtk">GTK</div>
+        <div class="empty-hint dxf">DXF</div>
+      </div>
     </div>
     <div class="coords" id="coords">x: 0.00 &nbsp; y: 0.00</div>
-    <a id="tb-brand" href="https://www.linkedin.com/in/brahimbenchakroun/" target="_blank" rel="noopener" title="Brahim Ben Chakroun — LinkedIn">
+    <a id="tb-brand" href="https://www.linkedin.com/in/brahimbenchakroun/" target="_blank" rel="noopener">
       <div class="tb-brand-avatar"><img src="https://media.licdn.com/dms/image/v2/D4E03AQFCuuurvdLqZA/profile-displayphoto-shrink_800_800/profile-displayphoto-shrink_800_800/0/1728899865907?e=1775088000&v=beta&t=k8JGkdryya3alo3Y3kNYy6N7NqyC0OEp5OVvPv32fUk" alt=""></div>
       <div id="tb-brand-text"><span class="tb-name">Brahim Ben Chakroun</span><span class="tb-role">Made by · LinkedIn ↗</span></div>
     </a>
@@ -363,548 +403,471 @@
 
 <script>
 // ════════════════════════════════════
-//  PARSER
+//  DXF — ACI COLOR TABLE
 // ════════════════════════════════════
-function parseGTK(xmlText) {
-  const doc = new DOMParser().parseFromString(xmlText, 'text/xml');
+const ACI={1:'#ff0000',2:'#ffff00',3:'#00ff00',4:'#00ffff',5:'#0000ff',6:'#ff00ff',7:'#e4e8f0',8:'#808080',9:'#c0c0c0',10:'#ff0000',20:'#ff7f00',30:'#ffbf00',40:'#ffff00',50:'#bfff00',60:'#7fff00',70:'#3fff00',80:'#00ff00',90:'#00ff7f',100:'#00ffff',110:'#00bfff',120:'#007fff',130:'#0000ff',140:'#7f00ff',150:'#ff00ff',160:'#ff007f',250:'#808080',255:'#e4e8f0'};
+function aciHex(n){n=parseInt(n);if(isNaN(n)||n<=0)return'#e4e8f0';if(ACI[n])return ACI[n];const keys=Object.keys(ACI).map(Number).sort((a,b)=>a-b);for(const k of keys){if(k>=n)return ACI[k];}return'#e4e8f0';}
 
-  const namedLayers = {};
-  doc.querySelectorAll('named_layer').forEach(nl => {
-    const id = +nl.getAttribute('layer');
-    const le = nl.querySelector('line');
-    namedLayers[id] = {
-      name: nl.getAttribute('name'), layer: id,
-      color: `rgb(${le?.getAttribute('r')||0},${le?.getAttribute('g')||0},${le?.getAttribute('b')||0})`,
-    };
-  });
-
-  const groups = [];
-  doc.querySelectorAll('shapegroup').forEach((sg, idx) => {
-    const groupLayer = +(sg.getAttribute('layer') ?? 0);
-    const gmat = sg.children[0]?.tagName === 'matrix' ? parseMat(sg.children[0]) : null;
-
-    let shapeName = '';
-    const tl = sg.querySelector('textline');
-    if (tl) {
-      shapeName = [...tl.querySelectorAll('glyphinfo')]
-        .map(g => { const c = +g.getAttribute('char'); return c > 31 && c < 127 ? String.fromCharCode(c) : ''; })
-        .join('').trim();
-    }
-
-    const outlines = [];
-    sg.querySelectorAll('outline').forEach(ol => {
-      outlines.push({ layer: +(ol.getAttribute('layer') ?? groupLayer), segments: parseOutline(ol) });
-    });
-
-    groups.push({ layer: groupLayer, matrix: gmat, outlines, shapeName, originalName: shapeName, sgIdx: idx });
-  });
-
-  return { namedLayers, groups, rawXml: xmlText };
+// ════════════════════════════════════
+//  DXF PARSER
+// ════════════════════════════════════
+function parseDXF(text){
+  const rawLines=text.replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n');
+  const P=[];
+  for(let i=0;i+1<rawLines.length;i+=2){const c=parseInt(rawLines[i].trim());if(!isNaN(c))P.push([c,rawLines[i+1].trim()]);}
+  const N=P.length;
+  function secStart(name){for(let i=0;i<N-1;i++){if(P[i][0]===0&&P[i][1]==='SECTION'&&P[i+1][0]===2&&P[i+1][1]===name)return i+2;}return -1;}
+  function secEnd(from){for(let i=from;i<N;i++){if(P[i][0]===0&&P[i][1]==='ENDSEC')return i;}return N;}
+  const layerDefs={};
+  const tabS=secStart('TABLES');
+  if(tabS>=0){const tabE=secEnd(tabS);let inLT=false,curN=null,curC=null;for(let i=tabS;i<tabE;i++){const[c,v]=P[i];if(c===0&&v==='TABLE'&&i+1<N&&P[i+1][1]==='LAYER'){inLT=true;continue;}if(c===0&&v==='ENDTAB'){inLT=false;curN=null;curC=null;continue;}if(!inLT)continue;if(c===0&&v==='LAYER'){curN=null;curC=null;continue;}if(c===2&&curN===null)curN=v;if(c===62)curC=v;if(curN!==null&&curC!==null){layerDefs[curN]={name:curN,color:aciHex(curC)};curN=null;curC=null;}}}
+  const polylines=[],lines_=[],texts_=[],arcs_=[],circles_=[];
+  const entS=secStart('ENTITIES');const entE=entS>=0?secEnd(entS):-1;
+  if(entS>=0){let i=entS;while(i<entE){const[c,v]=P[i];
+    if(c===0&&v==='POLYLINE'){const e={layer:'0',closed:false,verts:[]};i++;while(i<entE&&P[i][0]!==0){if(P[i][0]===8)e.layer=P[i][1];if(P[i][0]===70)e.closed=(parseInt(P[i][1])&1)===1;i++;}while(i<entE&&P[i][1]!=='SEQEND'){if(P[i][0]===0&&P[i][1]==='VERTEX'){const vt={x:0,y:0};i++;while(i<entE&&P[i][0]!==0){if(P[i][0]===10)vt.x=parseFloat(P[i][1]);if(P[i][0]===20)vt.y=parseFloat(P[i][1]);i++;}e.verts.push(vt);}else i++;}if(i<entE&&P[i][1]==='SEQEND'){i++;while(i<entE&&P[i][0]!==0)i++;}if(e.verts.length>=2)polylines.push(e);continue;}
+    if(c===0&&v==='LWPOLYLINE'){const e={layer:'0',closed:false,verts:[]};let px=null;i++;while(i<entE&&P[i][0]!==0){const[cc,vv]=P[i];if(cc===8)e.layer=vv;if(cc===70)e.closed=(parseInt(vv)&1)===1;if(cc===10)px=parseFloat(vv);if(cc===20&&px!==null){e.verts.push({x:px,y:parseFloat(vv)});px=null;}i++;}if(e.verts.length>=2)polylines.push(e);continue;}
+    if(c===0&&v==='LINE'){const e={layer:'0',x1:0,y1:0,x2:0,y2:0};i++;while(i<entE&&P[i][0]!==0){const[cc,vv]=P[i];if(cc===8)e.layer=vv;if(cc===10)e.x1=parseFloat(vv);if(cc===20)e.y1=parseFloat(vv);if(cc===11)e.x2=parseFloat(vv);if(cc===21)e.y2=parseFloat(vv);i++;}lines_.push(e);continue;}
+    if(c===0&&(v==='TEXT'||v==='MTEXT')){const e={layer:'0',x:0,y:0,text:''};i++;while(i<entE&&P[i][0]!==0){const[cc,vv]=P[i];if(cc===8)e.layer=vv;if(cc===10)e.x=parseFloat(vv);if(cc===20)e.y=parseFloat(vv);if(cc===1)e.text=vv.replace(/\\[^;]*;/g,'').replace(/\\P/gi,' ').trim();i++;}if(e.text)texts_.push(e);continue;}
+    if(c===0&&v==='ARC'){const e={layer:'0',cx:0,cy:0,r:1,sa:0,ea:360};i++;while(i<entE&&P[i][0]!==0){const[cc,vv]=P[i];if(cc===8)e.layer=vv;if(cc===10)e.cx=parseFloat(vv);if(cc===20)e.cy=parseFloat(vv);if(cc===40)e.r=parseFloat(vv);if(cc===50)e.sa=parseFloat(vv);if(cc===51)e.ea=parseFloat(vv);i++;}arcs_.push(e);continue;}
+    if(c===0&&v==='CIRCLE'){const e={layer:'0',cx:0,cy:0,r:1};i++;while(i<entE&&P[i][0]!==0){const[cc,vv]=P[i];if(cc===8)e.layer=vv;if(cc===10)e.cx=parseFloat(vv);if(cc===20)e.cy=parseFloat(vv);if(cc===40)e.r=parseFloat(vv);i++;}circles_.push(e);continue;}
+    i++;}}
+  const usedLayers=new Set();[...polylines,...lines_,...arcs_,...circles_,...texts_].forEach(e=>usedLayers.add(e.layer));
+  const FB=['#00e5ff','#ff3d6b','#a8ff78','#ffcc00','#b39dff','#ff9800','#38bdf8','#fb923c'];let fi=0;
+  const namedLayers={};usedLayers.forEach(nm=>{namedLayers[nm]=layerDefs[nm]||{name:nm,color:FB[fi++%FB.length]};});
+  let mnX=Infinity,mnY=Infinity,mxX=-Infinity,mxY=-Infinity;
+  function touch(x,y){if(isNaN(x)||isNaN(y))return;if(x<mnX)mnX=x;if(x>mxX)mxX=x;if(y<mnY)mnY=y;if(y>mxY)mxY=y;}
+  polylines.forEach(p=>p.verts.forEach(v=>touch(v.x,v.y)));lines_.forEach(l=>{touch(l.x1,l.y1);touch(l.x2,l.y2);});arcs_.forEach(a=>{touch(a.cx-a.r,a.cy-a.r);touch(a.cx+a.r,a.cy+a.r);});circles_.forEach(c=>{touch(c.cx-c.r,c.cy-c.r);touch(c.cx+c.r,c.cy+c.r);});texts_.forEach(t=>touch(t.x,t.y));
+  if(!isFinite(mnX)){mnX=0;mnY=0;mxX=100;mxY=100;}
+  return{namedLayers,polylines,lines:lines_,texts:texts_,arcs:arcs_,circles:circles_,bounds:{minX:mnX,minY:mnY,maxX:mxX,maxY:mxY,w:mxX-mnX,h:mxY-mnY},pathCount:polylines.length+lines_.length+arcs_.length+circles_.length};
 }
 
-function parseMat(el) {
-  return { x1:+el.getAttribute('x1'), y1:+el.getAttribute('y1'), x2:+el.getAttribute('x2'), y2:+el.getAttribute('y2'), xt:+el.getAttribute('xt'), yt:+el.getAttribute('yt') };
+// ════════════════════════════════════
+//  GTK PARSER
+// ════════════════════════════════════
+function parseGTK(xmlText){
+  const doc=new DOMParser().parseFromString(xmlText,'text/xml');
+  const namedLayers={};
+  doc.querySelectorAll('named_layer').forEach(nl=>{
+    const id=+nl.getAttribute('layer');const le=nl.querySelector('line');
+    namedLayers[id]={name:nl.getAttribute('name'),layer:id,color:`rgb(${le?.getAttribute('r')||0},${le?.getAttribute('g')||0},${le?.getAttribute('b')||0})`};
+  });
+  const groups=[];
+  doc.querySelectorAll('shapegroup').forEach((sg,idx)=>{
+    const groupLayer=+(sg.getAttribute('layer')??0);
+    const gmat=sg.children[0]?.tagName==='matrix'?parseMat(sg.children[0]):null;
+    let shapeName='';
+    const tl=sg.querySelector('textline');
+    if(tl){shapeName=[...tl.querySelectorAll('glyphinfo')].map(g=>{const c=+g.getAttribute('char');return c>31&&c<127?String.fromCharCode(c):'';}).join('').trim();}
+    const outlines=[];
+    sg.querySelectorAll('outline').forEach(ol=>{outlines.push({layer:+(ol.getAttribute('layer')??groupLayer),segments:parseOutline(ol)});});
+    groups.push({layer:groupLayer,matrix:gmat,outlines,shapeName,originalName:shapeName,sgIdx:idx});
+  });
+  return{namedLayers,groups,rawXml:xmlText};
 }
 
-function parseOutline(ol) {
-  const segs = []; let cur = {x:0,y:0}; let pend = null;
-  for (const el of ol.children) {
-    const tag = el.tagName, x = +el.getAttribute('x'), y = +el.getAttribute('y');
-    if (tag==='m')  { cur={x,y}; segs.push({type:'move',x,y}); pend=null; }
-    else if (tag==='l') { segs.push({type:'line',x1:cur.x,y1:cur.y,x2:x,y2:y}); cur={x,y}; pend=null; }
-    else if (tag==='b1') { pend={b1x:x,b1y:y}; }
-    else if (tag==='b2') { if(pend){pend.b2x=x;pend.b2y=y;} }
-    else if (tag==='b3') { if(pend){segs.push({type:'bezier',x1:cur.x,y1:cur.y,cp1x:pend.b1x,cp1y:pend.b1y,cp2x:pend.b2x,cp2y:pend.b2y,x2:x,y2:y});cur={x,y};pend=null;} }
-    else if (tag==='a1') { pend={a1x:x,a1y:y}; }
-    else if (tag==='a2') { if(pend?.a1x!==undefined){segs.push({type:'arc',x1:cur.x,y1:cur.y,cpx:pend.a1x,cpy:pend.a1y,x2:x,y2:y});cur={x,y};pend=null;} }
+function parseMat(el){return{x1:+el.getAttribute('x1'),y1:+el.getAttribute('y1'),x2:+el.getAttribute('x2'),y2:+el.getAttribute('y2'),xt:+el.getAttribute('xt'),yt:+el.getAttribute('yt')};}
+
+function parseOutline(ol){
+  const segs=[];let cur={x:0,y:0};let pend=null;
+  for(const el of ol.children){
+    const tag=el.tagName,x=+el.getAttribute('x'),y=+el.getAttribute('y');
+    if(tag==='m'){cur={x,y};segs.push({type:'move',x,y});pend=null;}
+    else if(tag==='l'){segs.push({type:'line',x1:cur.x,y1:cur.y,x2:x,y2:y});cur={x,y};pend=null;}
+    else if(tag==='b1'){pend={b1x:x,b1y:y};}
+    else if(tag==='b2'){if(pend){pend.b2x=x;pend.b2y=y;}}
+    else if(tag==='b3'){if(pend){segs.push({type:'bezier',x1:cur.x,y1:cur.y,cp1x:pend.b1x,cp1y:pend.b1y,cp2x:pend.b2x,cp2y:pend.b2y,x2:x,y2:y});cur={x,y};pend=null;}}
+    else if(tag==='a1'){pend={a1x:x,a1y:y};}
+    else if(tag==='a2'){if(pend?.a1x!==undefined){segs.push({type:'arc',x1:cur.x,y1:cur.y,cpx:pend.a1x,cpy:pend.a1y,x2:x,y2:y});cur={x,y};pend=null;}}
   }
   return segs;
 }
 
 // ════════════════════════════════════
-//  SERIALISER  — write edits back to GTK XML
+//  GTK SERIALIZER
 // ════════════════════════════════════
-function serializeGTK(file) {
-  const doc = new DOMParser().parseFromString(file.data.rawXml, 'text/xml');
-  const sgs = [...doc.querySelectorAll('shapegroup')];
-
-  file.data.groups.forEach((g, i) => {
-    const sg = sgs[i];
-    if (!sg) return;
-    const newName = g.shapeName;
-
-    let tl = sg.querySelector('textline');
-    if (!tl) {
-      // create a minimal textline before the first outline
-      tl = doc.createElement('textline');
-      tl.setAttribute('layer','7');
-      tl.setAttribute('glyphheight','13.00');
-      const m = doc.createElement('matrix');
-      m.setAttribute('x1','1'); m.setAttribute('y1','0');
-      m.setAttribute('x2','0'); m.setAttribute('y2','1');
-      m.setAttribute('xt','0'); m.setAttribute('yt','0');
-      tl.appendChild(m);
-      const firstOutline = sg.querySelector('outline');
-      sg.insertBefore(tl, firstOutline || null);
-    }
-
-    // Remove old glyphs
-    [...tl.querySelectorAll('glyphinfo')].forEach(g => g.remove());
-
-    // Write new glyphs — one per character, with running x offset
-    let xOff = 0;
-    for (const ch of newName) {
-      const gi = doc.createElement('glyphinfo');
-      gi.setAttribute('x1','13.00'); gi.setAttribute('y1','0.00');
-      gi.setAttribute('x2','0.00');  gi.setAttribute('y2','13.00');
-      gi.setAttribute('xt', xOff.toFixed(2)); gi.setAttribute('yt','0.00');
-      gi.setAttribute('char', String(ch.charCodeAt(0)));
-      gi.setAttribute('font','STANDARD.FNT');
-      tl.appendChild(gi);
-      xOff += 7.5;   // approx. advance width in GTK units
-    }
+function serializeGTK(file){
+  const doc=new DOMParser().parseFromString(file.data.rawXml,'text/xml');
+  const sgs=[...doc.querySelectorAll('shapegroup')];
+  file.data.groups.forEach((g,i)=>{
+    const sg=sgs[i];if(!sg)return;
+    const newName=g.shapeName;
+    let tl=sg.querySelector('textline');
+    if(!tl){tl=doc.createElement('textline');tl.setAttribute('layer','7');tl.setAttribute('glyphheight','13.00');const m=doc.createElement('matrix');m.setAttribute('x1','1');m.setAttribute('y1','0');m.setAttribute('x2','0');m.setAttribute('y2','1');m.setAttribute('xt','0');m.setAttribute('yt','0');tl.appendChild(m);const firstOutline=sg.querySelector('outline');sg.insertBefore(tl,firstOutline||null);}
+    [...tl.querySelectorAll('glyphinfo')].forEach(g=>g.remove());
+    let xOff=0;
+    for(const ch of newName){const gi=doc.createElement('glyphinfo');gi.setAttribute('x1','13.00');gi.setAttribute('y1','0.00');gi.setAttribute('x2','0.00');gi.setAttribute('y2','13.00');gi.setAttribute('xt',xOff.toFixed(2));gi.setAttribute('yt','0.00');gi.setAttribute('char',String(ch.charCodeAt(0)));gi.setAttribute('font','STANDARD.FNT');tl.appendChild(gi);xOff+=7.5;}
   });
-
-  let out = new XMLSerializer().serializeToString(doc);
-  // Strip the XML declaration — GTK files don't use one
-  out = out.replace(/^<\?xml[^?]*\?>\s*/, '');
+  let out=new XMLSerializer().serializeToString(doc);
+  out=out.replace(/^<\?xml[^?]*\?>\s*/,'');
   return out;
 }
 
 // ════════════════════════════════════
-//  MATH
+//  MATH (GTK)
 // ════════════════════════════════════
-function applyMat(m, x, y) {
-  return { x: m.x1*x + m.x2*y + m.xt, y: m.y1*x + m.y2*y + m.yt };
-}
+function applyMat(m,x,y){return{x:m.x1*x+m.x2*y+m.xt,y:m.y1*x+m.y2*y+m.yt};}
 
-function computeBounds(groups) {
-  let [mnX,mnY,mxX,mxY] = [Infinity,Infinity,-Infinity,-Infinity];
-  const touch = (x,y) => { if(x<mnX)mnX=x;if(x>mxX)mxX=x;if(y<mnY)mnY=y;if(y>mxY)mxY=y; };
-  groups.forEach(g => g.outlines.forEach(ol => ol.segments.forEach(s => {
-    const tr = (x,y) => g.matrix ? applyMat(g.matrix,x,y) : {x,y};
-    if(s.type==='move') { const p=tr(s.x,s.y); touch(p.x,p.y); }
-    else if(s.type==='line') { [tr(s.x1,s.y1),tr(s.x2,s.y2)].forEach(p=>touch(p.x,p.y)); }
-    else if(s.type==='bezier') { [tr(s.x1,s.y1),tr(s.cp1x,s.cp1y),tr(s.cp2x,s.cp2y),tr(s.x2,s.y2)].forEach(p=>touch(p.x,p.y)); }
-    else if(s.type==='arc')  { [tr(s.x1,s.y1),tr(s.cpx,s.cpy),tr(s.x2,s.y2)].forEach(p=>touch(p.x,p.y)); }
+function computeBoundsGTK(groups){
+  let[mnX,mnY,mxX,mxY]=[Infinity,Infinity,-Infinity,-Infinity];
+  const touch=(x,y)=>{if(x<mnX)mnX=x;if(x>mxX)mxX=x;if(y<mnY)mnY=y;if(y>mxY)mxY=y;};
+  groups.forEach(g=>g.outlines.forEach(ol=>ol.segments.forEach(s=>{
+    const tr=(x,y)=>g.matrix?applyMat(g.matrix,x,y):{x,y};
+    if(s.type==='move'){const p=tr(s.x,s.y);touch(p.x,p.y);}
+    else if(s.type==='line'){[tr(s.x1,s.y1),tr(s.x2,s.y2)].forEach(p=>touch(p.x,p.y));}
+    else if(s.type==='bezier'){[tr(s.x1,s.y1),tr(s.cp1x,s.cp1y),tr(s.cp2x,s.cp2y),tr(s.x2,s.y2)].forEach(p=>touch(p.x,p.y));}
+    else if(s.type==='arc'){[tr(s.x1,s.y1),tr(s.cpx,s.cpy),tr(s.x2,s.y2)].forEach(p=>touch(p.x,p.y));}
   })));
-  return { minX:mnX, minY:mnY, maxX:mxX, maxY:mxY, w:mxX-mnX, h:mxY-mnY };
+  return{minX:mnX,minY:mnY,maxX:mxX,maxY:mxY,w:mxX-mnX,h:mxY-mnY};
 }
 
 // ════════════════════════════════════
 //  STATE
 // ════════════════════════════════════
-const state = {
-  files: [], activeIdx: -1,
-  zoom: 1, panX: 0, panY: 0,
-  hiddenLayers: new Set(),
-  showLabels: true,
-  labelBasePx: 14,
-};
+const state={files:[],activeIdx:-1,zoom:1,panX:0,panY:0,hiddenLayers:new Set(),showLabels:true,labelBasePx:14};
+const canvas=document.getElementById('mainCanvas');
+const ctx=canvas.getContext('2d');
+const wrap=document.getElementById('canvasWrap');
+const empty=document.getElementById('emptyState');
 
-const canvas = document.getElementById('mainCanvas');
-const ctx    = canvas.getContext('2d');
-const wrap   = document.getElementById('canvasWrap');
-const empty  = document.getElementById('emptyState');
+function activeFile(){return state.activeIdx>=0?state.files[state.activeIdx]:null;}
+function isGTK(){const f=activeFile();return f&&f.type==='gtk';}
 
 // ════════════════════════════════════
 //  RENDER
 // ════════════════════════════════════
-function resize() { canvas.width = wrap.clientWidth; canvas.height = wrap.clientHeight; render(); }
+function resize(){canvas.width=wrap.clientWidth;canvas.height=wrap.clientHeight;render();}
 
-function render() {
-  const { activeIdx, files, zoom, panX, panY, hiddenLayers, showLabels, labelBasePx } = state;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  if (activeIdx < 0 || !files[activeIdx]) return;
+function render(){
+  const{activeIdx,files,zoom,panX,panY,hiddenLayers,showLabels,labelBasePx}=state;
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  if(activeIdx<0||!files[activeIdx])return;
+  const f=files[activeIdx];
+  if(f.type==='dxf') renderDXF(f,zoom,panX,panY,hiddenLayers,showLabels,labelBasePx);
+  else renderGTK(f,zoom,panX,panY,hiddenLayers,showLabels,labelBasePx);
+}
 
-  const { data, bounds } = files[activeIdx];
-  const { groups, namedLayers } = data;
-
-  // World → canvas (Y-flipped)
-  const tc = (wx, wy) => ({
-    x: (wx - bounds.minX) * zoom + panX,
-    y: (bounds.maxY - (wy - bounds.minY)) * zoom + panY,
+function renderDXF(f,zoom,panX,panY,hiddenLayers,showLabels,labelBasePx){
+  const{data,bounds}=f;
+  const tc=(wx,wy)=>({x:(wx-bounds.minX)*zoom+panX,y:(bounds.maxY-wy)*zoom+panY});
+  function lc(layer){const c=data.namedLayers[layer]?.color||'#e4e8f0';return c==='#ffffff'?'#e4e8f0':c;}
+  ctx.lineJoin='round';ctx.lineCap='round';ctx.lineWidth=1;
+  data.polylines.forEach(p=>{if(hiddenLayers.has(p.layer)||!p.verts.length)return;ctx.beginPath();ctx.strokeStyle=lc(p.layer);const p0=tc(p.verts[0].x,p.verts[0].y);ctx.moveTo(p0.x,p0.y);for(let i=1;i<p.verts.length;i++){const pt=tc(p.verts[i].x,p.verts[i].y);ctx.lineTo(pt.x,pt.y);}if(p.closed)ctx.closePath();ctx.stroke();});
+  data.lines.forEach(l=>{if(hiddenLayers.has(l.layer))return;ctx.beginPath();ctx.strokeStyle=lc(l.layer);const a=tc(l.x1,l.y1),b=tc(l.x2,l.y2);ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();});
+  data.arcs.forEach(a=>{if(hiddenLayers.has(a.layer))return;ctx.beginPath();ctx.strokeStyle=lc(a.layer);const cp=tc(a.cx,a.cy);ctx.arc(cp.x,cp.y,a.r*zoom,-a.sa*Math.PI/180,-a.ea*Math.PI/180,true);ctx.stroke();});
+  data.circles.forEach(c=>{if(hiddenLayers.has(c.layer))return;ctx.beginPath();ctx.strokeStyle=lc(c.layer);const cp=tc(c.cx,c.cy);ctx.arc(cp.x,cp.y,c.r*zoom,0,Math.PI*2);ctx.stroke();});
+  if(!showLabels)return;
+  data.texts.forEach(t=>{
+    if(hiddenLayers.has(t.layer)||!t.text)return;
+    const p=tc(t.x,t.y);if(p.x<-300||p.x>canvas.width+300||p.y<-50||p.y>canvas.height+50)return;
+    const fp=labelBasePx,pad=fp*0.4;ctx.font=`${fp}px "Space Mono",monospace`;const tw=ctx.measureText(t.text).width;
+    const pW=tw+pad*2,pH=fp+pad*2;ctx.fillStyle='rgba(10,12,18,0.82)';ctx.beginPath();if(ctx.roundRect)ctx.roundRect(p.x-pad,p.y-fp-pad,pW,pH,fp*0.22);else ctx.rect(p.x-pad,p.y-fp-pad,pW,pH);ctx.fill();
+    ctx.strokeStyle='rgba(0,229,255,0.3)';ctx.lineWidth=Math.max(0.5,fp*0.06);ctx.beginPath();if(ctx.roundRect)ctx.roundRect(p.x-pad,p.y-fp-pad,pW,pH,fp*0.22);else ctx.rect(p.x-pad,p.y-fp-pad,pW,pH);ctx.stroke();
+    ctx.lineWidth=1;ctx.fillStyle='rgba(0,229,255,0.92)';ctx.textAlign='left';ctx.textBaseline='alphabetic';ctx.fillText(t.text,p.x,p.y);
   });
+}
 
-  // ── Pass 1: outlines (always 1 px) ──
-  groups.forEach(g => {
-    g.outlines.forEach(ol => {
-      if (hiddenLayers.has(ol.layer)) return;
-      let color = namedLayers[ol.layer]?.color ?? '#ffffff';
-      if (color === 'rgb(0,0,0)') color = '#e4e8f0';
-
-      ctx.beginPath();
-      ctx.strokeStyle = color;
-      ctx.lineWidth   = 1;
-      ctx.lineJoin    = 'round';
-      ctx.lineCap     = 'round';
-
-      const tr = (x, y) => { const p = g.matrix ? applyMat(g.matrix,x,y) : {x,y}; return tc(p.x,p.y); };
-      let moved = false;
-
-      ol.segments.forEach(s => {
-        if (s.type==='move') {
-          const p=tr(s.x,s.y); ctx.moveTo(p.x,p.y); moved=true;
-        } else if (s.type==='line') {
-          if (!moved){const p=tr(s.x1,s.y1);ctx.moveTo(p.x,p.y);moved=true;}
-          const p=tr(s.x2,s.y2); ctx.lineTo(p.x,p.y);
-        } else if (s.type==='bezier') {
-          if (!moved){const p=tr(s.x1,s.y1);ctx.moveTo(p.x,p.y);moved=true;}
-          const c1=tr(s.cp1x,s.cp1y),c2=tr(s.cp2x,s.cp2y),ep=tr(s.x2,s.y2);
-          ctx.bezierCurveTo(c1.x,c1.y,c2.x,c2.y,ep.x,ep.y);
-        } else if (s.type==='arc') {
-          if (!moved){const p=tr(s.x1,s.y1);ctx.moveTo(p.x,p.y);moved=true;}
-          const cp=tr(s.cpx,s.cpy),ep=tr(s.x2,s.y2);
-          ctx.quadraticCurveTo(cp.x,cp.y,ep.x,ep.y);
-        }
+function renderGTK(f,zoom,panX,panY,hiddenLayers,showLabels,labelBasePx){
+  const{data,bounds}=f;const{groups,namedLayers}=data;
+  const tc=(wx,wy)=>({x:(wx-bounds.minX)*zoom+panX,y:(bounds.maxY-(wy-bounds.minY))*zoom+panY});
+  ctx.lineJoin='round';ctx.lineCap='round';ctx.lineWidth=1;
+  groups.forEach(g=>{
+    g.outlines.forEach(ol=>{
+      if(hiddenLayers.has(ol.layer))return;
+      let color=namedLayers[ol.layer]?.color??'#ffffff';if(color==='rgb(0,0,0)')color='#e4e8f0';
+      ctx.beginPath();ctx.strokeStyle=color;ctx.lineWidth=1;ctx.lineJoin='round';ctx.lineCap='round';
+      const tr=(x,y)=>{const p=g.matrix?applyMat(g.matrix,x,y):{x,y};return tc(p.x,p.y);};let moved=false;
+      ol.segments.forEach(s=>{
+        if(s.type==='move'){const p=tr(s.x,s.y);ctx.moveTo(p.x,p.y);moved=true;}
+        else if(s.type==='line'){if(!moved){const p=tr(s.x1,s.y1);ctx.moveTo(p.x,p.y);moved=true;}const p=tr(s.x2,s.y2);ctx.lineTo(p.x,p.y);}
+        else if(s.type==='bezier'){if(!moved){const p=tr(s.x1,s.y1);ctx.moveTo(p.x,p.y);moved=true;}const c1=tr(s.cp1x,s.cp1y),c2=tr(s.cp2x,s.cp2y),ep=tr(s.x2,s.y2);ctx.bezierCurveTo(c1.x,c1.y,c2.x,c2.y,ep.x,ep.y);}
+        else if(s.type==='arc'){if(!moved){const p=tr(s.x1,s.y1);ctx.moveTo(p.x,p.y);moved=true;}const cp=tr(s.cpx,s.cpy),ep=tr(s.x2,s.y2);ctx.quadraticCurveTo(cp.x,cp.y,ep.x,ep.y);}
       });
       ctx.stroke();
     });
   });
-
-  // ── Pass 2: labels (scale with zoom, fit inside bbox) ──
-  if (!showLabels) return;
-  ctx.textAlign    = 'center';
-  ctx.textBaseline = 'middle';
-
-  groups.forEach(g => {
-    if (!g.shapeName) return;
-
-    let [mnX,mnY,mxX,mxY] = [Infinity,Infinity,-Infinity,-Infinity];
-    const tr = (x, y) => { const p = g.matrix ? applyMat(g.matrix,x,y) : {x,y}; return tc(p.x,p.y); };
-
-    g.outlines.forEach(ol => {
-      if (hiddenLayers.has(ol.layer)) return;
-      ol.segments.forEach(s => {
-        const pts = [];
-        if (s.type==='move')   pts.push(tr(s.x,s.y));
-        else if (s.type==='line')   pts.push(tr(s.x1,s.y1),tr(s.x2,s.y2));
-        else if (s.type==='bezier') pts.push(tr(s.x1,s.y1),tr(s.cp1x,s.cp1y),tr(s.cp2x,s.cp2y),tr(s.x2,s.y2));
-        else if (s.type==='arc')    pts.push(tr(s.x1,s.y1),tr(s.cpx,s.cpy),tr(s.x2,s.y2));
-        pts.forEach(p=>{if(p.x<mnX)mnX=p.x;if(p.x>mxX)mxX=p.x;if(p.y<mnY)mnY=p.y;if(p.y>mxY)mxY=p.y;});
-      });
-    });
-    if (!isFinite(mnX)) return;
-
-    const bW = mxX-mnX, bH = mxY-mnY;
-    if (bW < 8 || bH < 8) return;
-    if (mxX<0||mnX>canvas.width||mxY<0||mnY>canvas.height) return;
-
-    const cx=(mnX+mxX)/2, cy=(mnY+mxY)/2;
-    const label = g.shapeName;
-
-    // Start at user-defined base size × zoom
-    let fp = labelBasePx * zoom;
-    ctx.font = `${fp}px "Space Mono",monospace`;
-    let tw = ctx.measureText(label).width;
-
-    // Shrink to fit 90% of bbox width
-    const maxW = bW * 0.90;
-    if (tw + fp*0.9 > maxW) {
-      fp = fp * (maxW / (tw + fp*0.9));
-      fp = Math.max(fp, 1);
-      ctx.font = `${fp}px "Space Mono",monospace`;
-      tw = ctx.measureText(label).width;
-    }
-    // Shrink to fit 65% of bbox height
-    const maxH = bH * 0.65;
-    if (fp * 1.9 > maxH) {
-      fp = maxH / 1.9;
-      fp = Math.max(fp, 1);
-      ctx.font = `${fp}px "Space Mono",monospace`;
-      tw = ctx.measureText(label).width;
-    }
-    if (fp < 4) return;
-
-    const pad = fp*0.42;
-    const pW = tw+pad*2, pH = fp+pad*2;
-    const rx = cx-pW/2, ry = cy-pH/2;
-    const rr = fp*0.28;
-
-    ctx.fillStyle = 'rgba(10,12,18,0.82)';
-    ctx.beginPath(); ctx.roundRect(rx,ry,pW,pH,rr); ctx.fill();
-
-    ctx.strokeStyle = 'rgba(0,229,255,0.45)';
-    ctx.lineWidth   = Math.max(0.5, fp*0.07);
-    ctx.beginPath(); ctx.roundRect(rx,ry,pW,pH,rr); ctx.stroke();
-
-    ctx.fillStyle = 'rgba(0,229,255,0.95)';
-    ctx.fillText(label, cx, cy);
+  if(!showLabels)return;
+  ctx.textAlign='center';ctx.textBaseline='middle';
+  groups.forEach(g=>{
+    if(!g.shapeName)return;
+    let[mnX,mnY,mxX,mxY]=[Infinity,Infinity,-Infinity,-Infinity];
+    const tr=(x,y)=>{const p=g.matrix?applyMat(g.matrix,x,y):{x,y};return tc(p.x,p.y);};
+    g.outlines.forEach(ol=>{if(hiddenLayers.has(ol.layer))return;ol.segments.forEach(s=>{const pts=[];if(s.type==='move')pts.push(tr(s.x,s.y));else if(s.type==='line')pts.push(tr(s.x1,s.y1),tr(s.x2,s.y2));else if(s.type==='bezier')pts.push(tr(s.x1,s.y1),tr(s.cp1x,s.cp1y),tr(s.cp2x,s.cp2y),tr(s.x2,s.y2));else if(s.type==='arc')pts.push(tr(s.x1,s.y1),tr(s.cpx,s.cpy),tr(s.x2,s.y2));pts.forEach(p=>{if(p.x<mnX)mnX=p.x;if(p.x>mxX)mxX=p.x;if(p.y<mnY)mnY=p.y;if(p.y>mxY)mxY=p.y;});});});
+    if(!isFinite(mnX))return;
+    const bW=mxX-mnX,bH=mxY-mnY;if(bW<8||bH<8)return;if(mxX<0||mnX>canvas.width||mxY<0||mnY>canvas.height)return;
+    const cx=(mnX+mxX)/2,cy=(mnY+mxY)/2;const label=g.shapeName;
+    let fp=labelBasePx*zoom;ctx.font=`${fp}px "Space Mono",monospace`;let tw=ctx.measureText(label).width;
+    const maxW=bW*0.90;if(tw+fp*0.9>maxW){fp=fp*(maxW/(tw+fp*0.9));fp=Math.max(fp,1);ctx.font=`${fp}px "Space Mono",monospace`;tw=ctx.measureText(label).width;}
+    const maxH=bH*0.65;if(fp*1.9>maxH){fp=maxH/1.9;fp=Math.max(fp,1);ctx.font=`${fp}px "Space Mono",monospace`;tw=ctx.measureText(label).width;}
+    if(fp<4)return;
+    const pad=fp*0.42,pW=tw+pad*2,pH=fp+pad*2,rx=cx-pW/2,ry=cy-pH/2,rr=fp*0.28;
+    ctx.fillStyle='rgba(10,12,18,0.82)';ctx.beginPath();ctx.roundRect(rx,ry,pW,pH,rr);ctx.fill();
+    ctx.strokeStyle='rgba(168,255,120,0.45)';ctx.lineWidth=Math.max(0.5,fp*0.07);ctx.beginPath();ctx.roundRect(rx,ry,pW,pH,rr);ctx.stroke();
+    ctx.fillStyle='rgba(168,255,120,0.95)';ctx.fillText(label,cx,cy);
   });
 }
 
 // ════════════════════════════════════
 //  FIT / ZOOM
 // ════════════════════════════════════
-function fitToScreen() {
-  if (state.activeIdx < 0) return;
-  const { bounds } = state.files[state.activeIdx];
-  if (!bounds || bounds.w===0) return;
+function fitToScreen(){
+  if(state.activeIdx<0)return;
+  const{bounds}=state.files[state.activeIdx];if(!bounds||bounds.w===0)return;
   const pad=50;
-  state.zoom = Math.min((canvas.width-pad*2)/bounds.w, (canvas.height-pad*2)/bounds.h, 4);
-  state.panX = (canvas.width  - bounds.w*state.zoom)/2;
-  state.panY = (canvas.height - bounds.h*state.zoom)/2;
-  updateZoomUI(); render();
+  state.zoom=Math.min((canvas.width-pad*2)/bounds.w,(canvas.height-pad*2)/bounds.h,4);
+  state.panX=(canvas.width-bounds.w*state.zoom)/2;
+  state.panY=(canvas.height-bounds.h*state.zoom)/2;
+  updateZoomUI();render();
 }
-function updateZoomUI() { document.getElementById('zoomLevel').textContent = Math.round(state.zoom*100)+'%'; }
+function updateZoomUI(){document.getElementById('zoomLevel').textContent=Math.round(state.zoom*100)+'%';}
 
-function panToGroup(gIdx) {
-  if (state.activeIdx < 0) return;
-  const { data, bounds } = state.files[state.activeIdx];
-  const g = data.groups[gIdx];
-  if (!g) return;
-  let [mnX,mnY,mxX,mxY]=[Infinity,Infinity,-Infinity,-Infinity];
+function panToText(idx){
+  if(state.activeIdx<0)return;
+  const{data,bounds}=state.files[state.activeIdx];
+  const t=data.texts[idx];if(!t)return;
+  state.panX=canvas.width/2-(t.x-bounds.minX)*state.zoom;
+  state.panY=canvas.height/2-(bounds.maxY-t.y)*state.zoom;render();
+}
+
+function panToGroup(gIdx){
+  if(state.activeIdx<0)return;
+  const{data,bounds}=state.files[state.activeIdx];
+  const g=data.groups[gIdx];if(!g)return;
+  let[mnX,mnY,mxX,mxY]=[Infinity,Infinity,-Infinity,-Infinity];
   g.outlines.forEach(ol=>ol.segments.forEach(s=>{
-    const tr=(x,y)=>g.matrix?applyMat(g.matrix,x,y):{x,y};
-    const pts=[];
-    if(s.type==='move')   pts.push(tr(s.x,s.y));
-    else if(s.type==='line')   pts.push(tr(s.x1,s.y1),tr(s.x2,s.y2));
-    else if(s.type==='bezier') pts.push(tr(s.x2,s.y2));
-    else if(s.type==='arc')    pts.push(tr(s.x2,s.y2));
+    const tr=(x,y)=>g.matrix?applyMat(g.matrix,x,y):{x,y};const pts=[];
+    if(s.type==='move')pts.push(tr(s.x,s.y));
+    else if(s.type==='line')pts.push(tr(s.x1,s.y1),tr(s.x2,s.y2));
+    else if(s.type==='bezier')pts.push(tr(s.x2,s.y2));
+    else if(s.type==='arc')pts.push(tr(s.x2,s.y2));
     pts.forEach(p=>{if(p.x<mnX)mnX=p.x;if(p.x>mxX)mxX=p.x;if(p.y<mnY)mnY=p.y;if(p.y>mxY)mxY=p.y;});
   }));
-  if (!isFinite(mnX)) return;
-  const wcx=(mnX+mxX)/2, wcy=(mnY+mxY)/2;
-  const wcy_f = bounds.maxY-(wcy-bounds.minY);
-  state.panX = canvas.width/2  - (wcx-bounds.minX)*state.zoom;
-  state.panY = canvas.height/2 - wcy_f*state.zoom;
-  render();
+  if(!isFinite(mnX))return;
+  const wcx=(mnX+mxX)/2,wcy=(mnY+mxY)/2;
+  const wcy_f=bounds.maxY-(wcy-bounds.minY);
+  state.panX=canvas.width/2-(wcx-bounds.minX)*state.zoom;
+  state.panY=canvas.height/2-wcy_f*state.zoom;render();
 }
 
 // ════════════════════════════════════
 //  LOAD
 // ════════════════════════════════════
-function loadGTK(name, text) {
-  const lb = document.getElementById('loadingBar');
-  lb.classList.add('active');
-  setTimeout(() => {
-    const data   = parseGTK(text);
-    const bounds = computeBounds(data.groups);
-    let pathCount = 0;
-    data.groups.forEach(g => pathCount += g.outlines.length);
-
-    const ex = state.files.findIndex(f=>f.name===name);
-    const fo = { name, data, bounds, pathCount, groupCount: data.groups.length };
-    if (ex>=0){state.files[ex]=fo;state.activeIdx=ex;}
-    else{state.files.push(fo);state.activeIdx=state.files.length-1;}
-
-    state.hiddenLayers = new Set();
-    empty.classList.add('hidden');
-    document.getElementById('saveBtn').disabled = false;
-
-    buildTabs(); buildLayers(); buildShapeList(); updateInfo(); fitToScreen();
+function loadDXF(name,text){
+  const lb=document.getElementById('loadingBar');lb.classList.add('active');
+  setTimeout(()=>{
+    try{
+      const data=parseDXF(text);
+      const fo={name,type:'dxf',data,bounds:data.bounds,pathCount:data.pathCount};
+      const ex=state.files.findIndex(f=>f.name===name);
+      if(ex>=0){state.files[ex]=fo;state.activeIdx=ex;}else{state.files.push(fo);state.activeIdx=state.files.length-1;}
+      state.hiddenLayers=new Set();empty.classList.add('hidden');
+      document.getElementById('saveBtn').disabled=true;
+      buildTabs();buildLayers();buildShapeList();updateInfo();fitToScreen();
+    }catch(e){alert('Error parsing DXF: '+e.message);console.error(e);}
     lb.classList.remove('active');
-  }, 10);
+  },10);
 }
 
-// ════════════════════════════════════
-//  SAVE
-// ════════════════════════════════════
-function saveGTK() {
-  if (state.activeIdx < 0) return;
-  const file = state.files[state.activeIdx];
-  const xml  = serializeGTK(file);
-  const blob = new Blob([xml], { type: 'application/xml' });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href     = url;
-  a.download = file.name.replace(/\.gtk$/i,'') + '_edited.gtk';
-  a.click();
-  URL.revokeObjectURL(url);
-  // Mark clean
-  file.data.groups.forEach(g => { g.originalName = g.shapeName; });
+function loadGTK(name,text){
+  const lb=document.getElementById('loadingBar');lb.classList.add('active');
+  setTimeout(()=>{
+    try{
+      const data=parseGTK(text);
+      const bounds=computeBoundsGTK(data.groups);
+      let pathCount=0;data.groups.forEach(g=>pathCount+=g.outlines.length);
+      const fo={name,type:'gtk',data,bounds,pathCount,groupCount:data.groups.length};
+      const ex=state.files.findIndex(f=>f.name===name);
+      if(ex>=0){state.files[ex]=fo;state.activeIdx=ex;}else{state.files.push(fo);state.activeIdx=state.files.length-1;}
+      state.hiddenLayers=new Set();empty.classList.add('hidden');
+      buildTabs();buildLayers();buildShapeList();updateInfo();fitToScreen();
+      updateSaveBtn();
+    }catch(e){alert('Error parsing GTK: '+e.message);console.error(e);}
+    lb.classList.remove('active');
+  },10);
+}
+
+function updateSaveBtn(){
+  const f=activeFile();
+  document.getElementById('saveBtn').disabled=!(f&&f.type==='gtk');
+}
+
+function saveGTK(){
+  if(state.activeIdx<0)return;
+  const file=state.files[state.activeIdx];
+  if(file.type!=='gtk')return;
+  const xml=serializeGTK(file);
+  const blob=new Blob([xml],{type:'application/xml'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download=file.name.replace(/\.gtk$/i,'')+'_edited.gtk';a.click();URL.revokeObjectURL(url);
+  file.data.groups.forEach(g=>{g.originalName=g.shapeName;});
   updateDirtyBadge();
-  buildShapeList();
 }
 
 // ════════════════════════════════════
 //  UI BUILDERS
 // ════════════════════════════════════
-function buildTabs() {
-  const el = document.getElementById('fileTabs');
-  el.innerHTML = '';
-  state.files.forEach((f,i) => {
-    const tab = document.createElement('div');
-    tab.className = 'file-tab'+(i===state.activeIdx?' active':'');
-    tab.innerHTML = `<div class="dot"></div>${f.name}`;
-    tab.onclick = () => {
-      state.activeIdx=i; state.hiddenLayers=new Set();
-      buildTabs(); buildLayers(); buildShapeList(); updateInfo(); fitToScreen();
-    };
+function buildTabs(){
+  const el=document.getElementById('fileTabs');el.innerHTML='';
+  state.files.forEach((f,i)=>{
+    const tab=document.createElement('div');
+    const isGtk=f.type==='gtk';
+    tab.className='file-tab'+(isGtk?' gtk-tab':'')+(i===state.activeIdx?' active':'');
+    tab.innerHTML=`<div class="dot"></div><span class="type-badge">${f.type.toUpperCase()}</span>${esc(f.name)}`;
+    tab.onclick=()=>{state.activeIdx=i;state.hiddenLayers=new Set();buildTabs();buildLayers();buildShapeList();updateInfo();fitToScreen();updateSaveBtn();};
     el.appendChild(tab);
   });
 }
 
-function buildLayers() {
-  const el = document.getElementById('layerList');
-  el.innerHTML = '';
-  if (state.activeIdx < 0) return;
-  const { data } = state.files[state.activeIdx];
-  const counts = {};
-  data.groups.forEach(g=>g.outlines.forEach(ol=>{counts[ol.layer]=(counts[ol.layer]||0)+1;}));
-  Object.values(data.namedLayers).forEach(layer => {
-    const cnt = counts[layer.layer]||0;
-    if (!cnt) return;
-    const item = document.createElement('div');
-    item.className = 'layer-item'+(state.hiddenLayers.has(layer.layer)?' hidden':'');
-    const sc = layer.color==='rgb(0,0,0)'?'#e4e8f0':layer.color;
-    item.innerHTML = `
-      <div class="layer-swatch" style="background:${sc}"></div>
-      <div class="layer-name">${layer.name}</div>
-      <div class="layer-count">${cnt}</div>
-      <svg class="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-        <circle cx="12" cy="12" r="3"/>
-      </svg>`;
-    item.onclick = () => {
-      state.hiddenLayers.has(layer.layer)?state.hiddenLayers.delete(layer.layer):state.hiddenLayers.add(layer.layer);
-      buildLayers(); render();
-    };
-    el.appendChild(item);
-  });
-}
-
-function buildShapeList() {
-  const el = document.getElementById('shapeList');
-  el.innerHTML = '';
-  if (state.activeIdx < 0) return;
-  const { data } = state.files[state.activeIdx];
-
-  data.groups.forEach((g, i) => {
-    const dirty = g.shapeName !== g.originalName;
-    const row = document.createElement('div');
-    row.className = 'shape-item';
-    row.id = `sr-${i}`;
-    row.innerHTML = `
-      <span class="shape-idx">${i+1}</span>
-      <input class="shape-name-input${dirty?' dirty':''}" type="text"
-             value="${esc(g.shapeName)}" placeholder="(unnamed)" data-idx="${i}">
-      <button class="locate-btn" data-idx="${i}" title="Pan to shape">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="3"/>
-          <path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
-        </svg>
-      </button>`;
-
-    const inp = row.querySelector('.shape-name-input');
-    inp.addEventListener('input', () => {
-      data.groups[i].shapeName = inp.value;
-      inp.classList.toggle('dirty', inp.value !== data.groups[i].originalName);
-      updateDirtyBadge(); render();
+function buildLayers(){
+  const el=document.getElementById('layerList');el.innerHTML='';
+  if(state.activeIdx<0)return;
+  const f=state.files[state.activeIdx];
+  const badge=document.getElementById('modeBadge');
+  const modeText=document.getElementById('modeText');
+  badge.style.display='inline-flex';
+  if(f.type==='gtk'){
+    badge.className='mode-badge gtk';modeText.textContent='GTK';
+    document.getElementById('labelOptLabel').textContent='Shape names';
+    document.getElementById('shapesTitle').textContent='Shapes (editable)';
+    document.getElementById('iGLabel').textContent='GROUPS';
+    const{data}=f;const counts={};
+    data.groups.forEach(g=>g.outlines.forEach(ol=>{counts[ol.layer]=(counts[ol.layer]||0)+1;}));
+    Object.values(data.namedLayers).forEach(layer=>{
+      const cnt=counts[layer.layer]||0;if(!cnt)return;
+      const item=document.createElement('div');
+      item.className='layer-item'+(state.hiddenLayers.has(layer.layer)?' hidden':'');
+      const sc=layer.color==='rgb(0,0,0)'?'#e4e8f0':layer.color;
+      item.innerHTML=`<div class="layer-swatch" style="background:${sc}"></div><div class="layer-name">${esc(layer.name)}</div><div class="layer-count">${cnt}</div><svg class="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+      item.onclick=()=>{state.hiddenLayers.has(layer.layer)?state.hiddenLayers.delete(layer.layer):state.hiddenLayers.add(layer.layer);buildLayers();render();};
+      el.appendChild(item);
     });
-    inp.addEventListener('keydown', e => { if(e.key==='Enter') inp.blur(); });
-
-    row.querySelector('.locate-btn').addEventListener('click', () => {
-      panToGroup(i);
-      canvas.classList.add('do-flash');
-      setTimeout(()=>canvas.classList.remove('do-flash'), 1200);
+  } else {
+    badge.className='mode-badge';modeText.textContent='DXF';
+    document.getElementById('labelOptLabel').textContent='Shape labels';
+    document.getElementById('shapesTitle').textContent='Shapes';
+    document.getElementById('iGLabel').textContent='TEXTS';
+    const{data}=f;const counts={};
+    [...data.polylines,...data.lines,...data.arcs,...data.circles,...data.texts].forEach(e=>{counts[e.layer]=(counts[e.layer]||0)+1;});
+    Object.values(data.namedLayers).forEach(layer=>{
+      const cnt=counts[layer.name]||0;if(!cnt)return;
+      const item=document.createElement('div');
+      item.className='layer-item'+(state.hiddenLayers.has(layer.name)?' hidden':'');
+      const sc=layer.color==='#ffffff'?'#e4e8f0':layer.color;
+      item.innerHTML=`<div class="layer-swatch" style="background:${sc}"></div><div class="layer-name">${esc(layer.name)}</div><div class="layer-count">${cnt}</div><svg class="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+      item.onclick=()=>{state.hiddenLayers.has(layer.name)?state.hiddenLayers.delete(layer.name):state.hiddenLayers.add(layer.name);buildLayers();render();};
+      el.appendChild(item);
     });
-
-    el.appendChild(row);
-  });
-  updateDirtyBadge();
+  }
 }
 
-function updateDirtyBadge() {
-  if (state.activeIdx < 0) return;
-  const any = state.files[state.activeIdx].data.groups.some(g=>g.shapeName!==g.originalName);
-  document.getElementById('dirtyBadge').style.display = any?'inline':'none';
+function buildShapeList(){
+  const el=document.getElementById('shapeList');el.innerHTML='';
+  if(state.activeIdx<0)return;
+  const f=state.files[state.activeIdx];
+  if(f.type==='gtk'){
+    f.data.groups.forEach((g,i)=>{
+      const dirty=g.shapeName!==g.originalName;
+      const row=document.createElement('div');row.className='shape-item';row.id=`sr-${i}`;
+      row.innerHTML=`<span class="shape-idx">${i+1}</span><input class="shape-name-input${dirty?' dirty':''}" type="text" value="${esc(g.shapeName)}" placeholder="(unnamed)" data-idx="${i}"><button class="locate-btn" data-idx="${i}" title="Pan to shape"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>`;
+      const inp=row.querySelector('.shape-name-input');
+      inp.addEventListener('input',()=>{f.data.groups[i].shapeName=inp.value;inp.classList.toggle('dirty',inp.value!==f.data.groups[i].originalName);updateDirtyBadge();render();});
+      inp.addEventListener('keydown',e=>{if(e.key==='Enter')inp.blur();});
+      row.querySelector('.locate-btn').addEventListener('click',()=>{panToGroup(i);canvas.classList.add('do-flash');setTimeout(()=>canvas.classList.remove('do-flash'),1200);});
+      el.appendChild(row);
+    });
+    updateDirtyBadge();
+  } else {
+    f.data.texts.forEach((t,i)=>{
+      const row=document.createElement('div');row.className='shape-item';
+      row.innerHTML=`<span class="shape-idx">${i+1}</span><span class="shape-label" title="${esc(t.text)}">${esc(t.text)}</span><button class="locate-btn" title="Pan to label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>`;
+      row.querySelector('.locate-btn').addEventListener('click',()=>{panToText(i);canvas.classList.add('do-flash');setTimeout(()=>canvas.classList.remove('do-flash'),1200);});
+      el.appendChild(row);
+    });
+    document.getElementById('dirtyBadge').style.display='none';
+  }
 }
 
-function updateInfo() {
-  if (state.activeIdx < 0) return;
-  const f = state.files[state.activeIdx];
-  document.getElementById('iW').textContent  = f.bounds.w.toFixed(1)+' mm';
-  document.getElementById('iH').textContent  = f.bounds.h.toFixed(1)+' mm';
-  document.getElementById('iP').textContent  = f.pathCount;
-  document.getElementById('iG').textContent  = f.groupCount;
-  document.getElementById('iFN').textContent = f.name;
+function updateDirtyBadge(){
+  if(state.activeIdx<0)return;
+  const f=state.files[state.activeIdx];
+  if(f.type!=='gtk'){document.getElementById('dirtyBadge').style.display='none';return;}
+  const any=f.data.groups.some(g=>g.shapeName!==g.originalName);
+  document.getElementById('dirtyBadge').style.display=any?'inline':'none';
 }
 
-function toggleLabels() {
-  state.showLabels = !state.showLabels;
-  document.getElementById('labelTrack').classList.toggle('on', state.showLabels);
-  render();
+function updateInfo(){
+  if(state.activeIdx<0)return;
+  const f=state.files[state.activeIdx];
+  document.getElementById('iW').textContent=f.bounds.w.toFixed(1)+' mm';
+  document.getElementById('iH').textContent=f.bounds.h.toFixed(1)+' mm';
+  document.getElementById('iP').textContent=f.pathCount;
+  document.getElementById('iG').textContent=f.type==='gtk'?f.groupCount:f.data.texts.length;
+  document.getElementById('iFN').textContent=f.name;
 }
 
-function onTextSize(v) {
-  state.labelBasePx = +v;
-  document.getElementById('sliderVal').textContent = v;
-  render();
-}
-
-function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function toggleLabels(){state.showLabels=!state.showLabels;document.getElementById('labelTrack').classList.toggle('on',state.showLabels);render();}
+function onTextSize(v){state.labelBasePx=+v;document.getElementById('sliderVal').textContent=v;render();}
+function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
 // ════════════════════════════════════
 //  INTERACTIONS
 // ════════════════════════════════════
-let dragging=false, lastX=0, lastY=0;
-wrap.addEventListener('mousedown', e => {
-  if (e.target.closest('input,button,a')) return;
-  dragging=true; lastX=e.clientX; lastY=e.clientY;
-});
-window.addEventListener('mouseup',  () => { dragging=false; });
-window.addEventListener('mousemove', e => {
-  if (dragging) {
-    state.panX += e.clientX-lastX; state.panY += e.clientY-lastY;
-    lastX=e.clientX; lastY=e.clientY; render();
-  }
+let dragging=false,lastX=0,lastY=0;
+wrap.addEventListener('mousedown',e=>{if(e.target.closest('input,button,a'))return;dragging=true;lastX=e.clientX;lastY=e.clientY;});
+window.addEventListener('mouseup',()=>{dragging=false;});
+window.addEventListener('mousemove',e=>{
+  if(dragging){state.panX+=e.clientX-lastX;state.panY+=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;render();}
   const r=canvas.getBoundingClientRect();
-  if (state.activeIdx>=0) {
-    const {bounds}=state.files[state.activeIdx];
+  if(state.activeIdx>=0){
+    const{bounds}=state.files[state.activeIdx];
     const wx=(e.clientX-r.left-state.panX)/state.zoom+bounds.minX;
     const wy=bounds.maxY-(e.clientY-r.top-state.panY)/state.zoom;
     document.getElementById('coords').textContent=`x: ${wx.toFixed(2)}  y: ${wy.toFixed(2)}`;
   }
 });
-
-wrap.addEventListener('wheel', e => {
+wrap.addEventListener('wheel',e=>{
   e.preventDefault();
-  const r=canvas.getBoundingClientRect();
-  const mx=e.clientX-r.left, my=e.clientY-r.top;
-  const f=e.deltaY<0?1.12:0.89;
-  const nz=Math.max(0.05,Math.min(state.zoom*f,50));
-  state.panX=mx-(mx-state.panX)*(nz/state.zoom);
-  state.panY=my-(my-state.panY)*(nz/state.zoom);
-  state.zoom=nz; updateZoomUI(); render();
+  const r=canvas.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
+  const f=e.deltaY<0?1.12:0.89,nz=Math.max(0.005,Math.min(state.zoom*f,500));
+  state.panX=mx-(mx-state.panX)*(nz/state.zoom);state.panY=my-(my-state.panY)*(nz/state.zoom);
+  state.zoom=nz;updateZoomUI();render();
 },{passive:false});
-
 let lastT=null;
 wrap.addEventListener('touchstart',e=>{lastT=[...e.touches];},{passive:true});
 wrap.addEventListener('touchmove',e=>{
-  e.preventDefault();
-  const t=[...e.touches];
-  if(t.length===1&&lastT?.length===1){
-    state.panX+=t[0].clientX-lastT[0].clientX;
-    state.panY+=t[0].clientY-lastT[0].clientY;
-    render();
-  } else if(t.length===2&&lastT?.length===2){
+  e.preventDefault();const t=[...e.touches];
+  if(t.length===1&&lastT?.length===1){state.panX+=t[0].clientX-lastT[0].clientX;state.panY+=t[0].clientY-lastT[0].clientY;render();}
+  else if(t.length===2&&lastT?.length===2){
     const pd=Math.hypot(lastT[0].clientX-lastT[1].clientX,lastT[0].clientY-lastT[1].clientY);
     const nd=Math.hypot(t[0].clientX-t[1].clientX,t[0].clientY-t[1].clientY);
     const mx=(t[0].clientX+t[1].clientX)/2-canvas.getBoundingClientRect().left;
     const my=(t[0].clientY+t[1].clientY)/2-canvas.getBoundingClientRect().top;
-    const nz=Math.max(0.05,Math.min(state.zoom*(nd/pd),50));
-    state.panX=mx-(mx-state.panX)*(nz/state.zoom);
-    state.panY=my-(my-state.panY)*(nz/state.zoom);
-    state.zoom=nz; updateZoomUI(); render();
+    const nz=Math.max(0.005,Math.min(state.zoom*(nd/pd),500));
+    state.panX=mx-(mx-state.panX)*(nz/state.zoom);state.panY=my-(my-state.panY)*(nz/state.zoom);
+    state.zoom=nz;updateZoomUI();render();
   }
   lastT=t;
 },{passive:false});
-
-document.getElementById('zoomIn').onclick  = ()=>{state.zoom=Math.min(state.zoom*1.25,50);updateZoomUI();render();};
-document.getElementById('zoomOut').onclick = ()=>{state.zoom=Math.max(state.zoom*0.8,0.05);updateZoomUI();render();};
-document.getElementById('fitBtn').onclick  = fitToScreen;
+document.getElementById('zoomIn').onclick=()=>{state.zoom=Math.min(state.zoom*1.25,500);updateZoomUI();render();};
+document.getElementById('zoomOut').onclick=()=>{state.zoom=Math.max(state.zoom*0.8,0.005);updateZoomUI();render();};
+document.getElementById('fitBtn').onclick=fitToScreen;
 
 document.getElementById('fileInput').addEventListener('change',e=>{
+  [...e.target.files].forEach(f=>{const r=new FileReader();r.onload=ev=>loadDXF(f.name,ev.target.result);r.readAsText(f);});
+  e.target.value='';
+});
+document.getElementById('fileInputGTK').addEventListener('change',e=>{
   [...e.target.files].forEach(f=>{const r=new FileReader();r.onload=ev=>loadGTK(f.name,ev.target.result);r.readAsText(f);});
+  e.target.value='';
 });
 
-wrap.addEventListener('dragover', e=>{e.preventDefault();wrap.style.outline='2px dashed var(--accent)';});
+// Drop zone — auto-detect by extension
+wrap.addEventListener('dragover',e=>{e.preventDefault();wrap.style.outline='2px dashed var(--accent)';});
 wrap.addEventListener('dragleave',()=>{wrap.style.outline='';});
 wrap.addEventListener('drop',e=>{
   e.preventDefault();wrap.style.outline='';
   [...e.dataTransfer.files].forEach(f=>{
-    if(f.name.endsWith('.gtk')){const r=new FileReader();r.onload=ev=>loadGTK(f.name,ev.target.result);r.readAsText(f);}
+    if(f.name.toLowerCase().endsWith('.dxf')){const r=new FileReader();r.onload=ev=>loadDXF(f.name,ev.target.result);r.readAsText(f);}
+    else if(f.name.toLowerCase().endsWith('.gtk')){const r=new FileReader();r.onload=ev=>loadGTK(f.name,ev.target.result);r.readAsText(f);}
   });
 });
 
