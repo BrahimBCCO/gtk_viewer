@@ -1,10 +1,9 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GTK + DXF Viewer — Zund Cutting</title>
+<title>GTK + DXF + ZCC Viewer — Zund Cutting</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap');
 
@@ -16,6 +15,7 @@
     --accent: #00e5ff;
     --accent2: #ff3d6b;
     --accent-gtk: #a8ff78;
+    --accent-zcc: #ffb347;
     --text: #e4e8f0;
     --muted: #5a6480;
     --panel-w: 270px;
@@ -59,6 +59,9 @@
   .file-tab:hover { background: var(--surface2); color: var(--text); }
   .file-tab.active { background: var(--surface2); border-color: var(--accent); color: var(--accent); }
   .file-tab.active.gtk-tab { border-color: var(--accent-gtk); color: var(--accent-gtk); }
+  .file-tab.zcc-tab .dot { background: var(--accent-zcc); }
+  .file-tab.active.zcc-tab { border-color: var(--accent-zcc); color: var(--accent-zcc); }
+  .file-tab.active.zcc-tab .dot { box-shadow: 0 0 6px var(--accent-zcc); }
   .file-tab .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); opacity: .6; }
   .file-tab.gtk-tab .dot { background: var(--accent-gtk); }
   .file-tab.active .dot { opacity: 1; box-shadow: 0 0 6px var(--accent); }
@@ -69,6 +72,7 @@
     font-family: 'Space Mono', monospace; letter-spacing: .05em;
   }
   .file-tab.gtk-tab .type-badge { background: rgba(168,255,120,.12); color: var(--accent-gtk); }
+  .file-tab.zcc-tab .type-badge { background: rgba(255,179,71,.12); color: var(--accent-zcc); }
   .hdr-btn {
     display: flex; align-items: center; gap: 6px;
     padding: 6px 13px; background: transparent;
@@ -77,10 +81,12 @@
     font-family: 'DM Sans', sans-serif; transition: all .15s; white-space: nowrap;
   }
   .hdr-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .hdr-btn:active { transform: scale(0.97); }
   .hdr-btn.gtk:hover { border-color: var(--accent-gtk); color: var(--accent-gtk); }
+  .hdr-btn.zcc:hover { border-color: var(--accent-zcc); color: var(--accent-zcc); }
   .hdr-btn.save:hover { border-color: var(--accent-gtk); color: var(--accent-gtk); }
   .hdr-btn svg { width: 14px; height: 14px; }
-  .hdr-btn:disabled { opacity: .3; cursor: default; pointer-events: none; }
+  .hdr-btn:disabled { opacity: .3; cursor: default; pointer-events: none; transform: none; }
   .hdr-sep { width: 1px; height: 22px; background: var(--border); flex-shrink: 0; }
 
   /* LAYOUT */
@@ -111,6 +117,7 @@
     background: rgba(0,229,255,.1); color: var(--accent); border: 1px solid rgba(0,229,255,.2);
   }
   .mode-badge.gtk { background: rgba(168,255,120,.1); color: var(--accent-gtk); border-color: rgba(168,255,120,.2); }
+  .mode-badge.zcc { background: rgba(255,179,71,.1); color: var(--accent-zcc); border-color: rgba(255,179,71,.2); }
   .mode-badge .dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 
   /* LAYERS */
@@ -215,6 +222,7 @@
     display: flex; align-items: center; justify-content: center;
     transition: all .1s; flex-shrink: 0;
   }
+  .zoom-btn:active { transform: scale(0.92); }
   .zoom-btn:hover { border-color: var(--accent); color: var(--accent); }
   .zoom-level {
     font-family: 'Space Mono', monospace; font-size: 11px;
@@ -227,6 +235,7 @@
     font-family: 'DM Sans', sans-serif; transition: all .1s; white-space: nowrap;
   }
   .fit-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .fit-btn:active { transform: scale(0.95); }
 
   /* CANVAS */
   .canvas-wrap {
@@ -240,13 +249,13 @@
     background-image: radial-gradient(circle, rgba(255,255,255,.07) 1px, transparent 1px);
     background-size: 28px 28px; pointer-events: none;
   }
-  canvas { position: absolute; top: 0; left: 0; }
+  canvas { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
   .coords {
     position: absolute; bottom: 14px; right: 16px;
     font-family: 'Space Mono', monospace; font-size: 10px;
     color: var(--muted); background: rgba(13,15,20,.7);
     padding: 4px 10px; border-radius: 4px; border: 1px solid var(--border);
-    pointer-events: none; letter-spacing: .05em;
+    pointer-events: none; letter-spacing: .05em; backdrop-filter: blur(4px);
   }
   .empty-state {
     position: absolute; inset: 0;
@@ -268,7 +277,8 @@
   }
   .empty-hint.dxf { color: var(--accent); border-color: rgba(0,229,255,.25); background: rgba(0,229,255,.05); }
   .empty-hint.gtk { color: var(--accent-gtk); border-color: rgba(168,255,120,.25); background: rgba(168,255,120,.05); }
-  #fileInput, #fileInputGTK { display: none; }
+  .empty-hint.zcc { color: var(--accent-zcc); border-color: rgba(255,179,71,.25); background: rgba(255,179,71,.05); }
+  #fileInputs input { display: none; }
   .loading-bar {
     position: absolute; top: 0; left: 0; right: 0; height: 2px;
     background: linear-gradient(90deg, var(--accent), var(--accent2));
@@ -300,8 +310,13 @@
 <body>
 <div class="loading-bar" id="loadingBar"></div>
 <header>
-  <div class="logo"><span class="gtk-part">GTK</span><span>+</span>DXF<span>/</span>View</div>
+  <div class="logo"><span class="gtk-part">GTK</span><span>+</span>DXF<span>+</span><span style="color:var(--accent-zcc)">ZCC</span><span>/</span>View</div>
   <div class="file-tabs" id="fileTabs"></div>
+  
+  <button class="hdr-btn gtk" id="autoGridBtn" onclick="autoGridGTK()" style="display:none" title="Arrange overlapping shapes in a grid">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+    Auto-Grid
+  </button>
   <button class="hdr-btn gtk" onclick="document.getElementById('fileInputGTK').click()">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
     Open GTK
@@ -311,12 +326,23 @@
     Save GTK
   </button>
   <div class="hdr-sep"></div>
+  
+  <button class="hdr-btn zcc" onclick="document.getElementById('fileInputZCC').click()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+    Open ZCC
+  </button>
+  <div class="hdr-sep"></div>
+  
   <button class="hdr-btn" onclick="document.getElementById('fileInput').click()">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
     Open DXF
   </button>
-  <input type="file" id="fileInput" accept=".dxf" multiple>
-  <input type="file" id="fileInputGTK" accept=".gtk" multiple>
+  
+  <div id="fileInputs">
+    <input type="file" id="fileInput" accept=".dxf" multiple>
+    <input type="file" id="fileInputGTK" accept=".gtk" multiple>
+    <input type="file" id="fileInputZCC" accept=".zcc" multiple>
+  </div>
 </header>
 
 <div class="main">
@@ -341,6 +367,20 @@
           <div class="info-cell" style="grid-column:1/-1">
             <div class="info-label">FILENAME</div>
             <div class="info-value" id="iFN" style="font-size:10px;word-break:break-all">—</div>
+          </div>
+        </div>
+        <div id="zccMeta" style="display:none;padding:0 0 6px">
+          <div class="info-cell" style="grid-column:1/-1">
+            <div class="info-label">MATERIAL</div>
+            <div class="info-value" id="iMat" style="font-size:10px;word-break:break-all">—</div>
+          </div>
+          <div class="info-cell">
+            <div class="info-label">THICKNESS</div>
+            <div class="info-value" id="iThick">—</div>
+          </div>
+          <div class="info-cell">
+            <div class="info-label">ZCC VER.</div>
+            <div class="info-value" id="iZccVer">—</div>
           </div>
         </div>
       </div>
@@ -391,6 +431,7 @@
       <div class="empty-hints">
         <div class="empty-hint gtk">GTK</div>
         <div class="empty-hint dxf">DXF</div>
+        <div class="empty-hint zcc">ZCC</div>
       </div>
     </div>
     <div class="coords" id="coords">x: 0.00 &nbsp; y: 0.00</div>
@@ -402,6 +443,14 @@
 </div>
 
 <script>
+// ════════════════════════════════════
+//  HELPERS
+// ════════════════════════════════════
+function drawRect(ctx, x, y, w, h, r) {
+  if (ctx.roundRect) ctx.roundRect(x, y, w, h, r);
+  else ctx.rect(x, y, w, h);
+}
+
 // ════════════════════════════════════
 //  DXF — ACI COLOR TABLE
 // ════════════════════════════════════
@@ -444,6 +493,26 @@ function parseDXF(text){
 // ════════════════════════════════════
 //  GTK PARSER
 // ════════════════════════════════════
+
+// Chain two matrices: result = outer( inner(p) )
+// i.e. apply inner first, then outer
+function chainMat(outer, inner){
+  if(!outer && !inner) return null;
+  if(!outer) return inner;
+  if(!inner) return outer;
+  // Combined: p_world = outer( inner(p_local) )
+  // = outer.x1*(inner.x1*px + inner.x2*py + inner.xt)
+  //   + outer.x2*(inner.y1*px + inner.y2*py + inner.yt) + outer.xt
+  return {
+    x1: outer.x1*inner.x1 + outer.x2*inner.y1,
+    y1: outer.y1*inner.x1 + outer.y2*inner.y1,
+    x2: outer.x1*inner.x2 + outer.x2*inner.y2,
+    y2: outer.y1*inner.x2 + outer.y2*inner.y2,
+    xt: outer.x1*inner.xt + outer.x2*inner.yt + outer.xt,
+    yt: outer.y1*inner.xt + outer.y2*inner.yt + outer.yt
+  };
+}
+
 function parseGTK(xmlText){
   const doc=new DOMParser().parseFromString(xmlText,'text/xml');
   const namedLayers={};
@@ -451,21 +520,74 @@ function parseGTK(xmlText){
     const id=+nl.getAttribute('layer');const le=nl.querySelector('line');
     namedLayers[id]={name:nl.getAttribute('name'),layer:id,color:`rgb(${le?.getAttribute('r')||0},${le?.getAttribute('g')||0},${le?.getAttribute('b')||0})`};
   });
+  
   const groups=[];
-  doc.querySelectorAll('shapegroup').forEach((sg,idx)=>{
+  let sgIdx=0;
+  doc.querySelectorAll('shapegroup').forEach((sg)=>{
     const groupLayer=+(sg.getAttribute('layer')??0);
-    const gmat=sg.children[0]?.tagName==='matrix'?parseMat(sg.children[0]):null;
-    let shapeName='';
-    const tl=sg.querySelector('textline');
-    if(tl){shapeName=[...tl.querySelectorAll('glyphinfo')].map(g=>{const c=+g.getAttribute('char');return c>31&&c<127?String.fromCharCode(c):'';}).join('').trim();}
+    const gmatEl=[...sg.children].find(c=>c.tagName==='matrix');
+    const gmat=gmatEl?parseMat(gmatEl):null;
+    
+    // Prefer the 'name' attribute on shapegroup; fall back to decoding textline glyphs
+    let shapeName=sg.getAttribute('name')||'';
+    if(!shapeName){
+      const tl=sg.querySelector('textline');
+      if(tl){shapeName=[...tl.querySelectorAll('glyphinfo')].map(g=>{const c=+g.getAttribute('char');return c>31&&c<127?String.fromCharCode(c):'';}).join('').trim();}
+    }
+    
     const outlines=[];
-    sg.querySelectorAll('outline').forEach(ol=>{outlines.push({layer:+(ol.getAttribute('layer')??groupLayer),segments:parseOutline(ol)});});
-    groups.push({layer:groupLayer,matrix:gmat,outlines,shapeName,originalName:shapeName,sgIdx:idx});
+    sg.querySelectorAll('outline').forEach(ol=>{
+      const olMatEl=[...ol.children].find(c=>c.tagName==='matrix');
+      const olMat=olMatEl?parseMat(olMatEl):null;
+      // FIX: when outline has its own matrix AND shapegroup has a matrix,
+      // chain them: world = gmat( olMat( local_point ) )
+      // Previously the app did olMat || gmat which discarded the group translation.
+      const finalMat=chainMat(gmat, olMat);
+      outlines.push({
+        layer:+(ol.getAttribute('layer')??groupLayer),
+        matrix:finalMat,
+        segments:parseOutline(ol)
+      });
+    });
+    
+    groups.push({layer:groupLayer,matrix:gmat,outlines,shapeName,originalName:shapeName,sgIdx:sgIdx++});
   });
+
+  // FIX: also handle <outline> elements that are direct children of <graphic>
+  // (not inside any <shapegroup>) — these are standalone cut/crease paths
+  const graphic=doc.querySelector('graphic');
+  if(graphic){
+    const topOutlines=[...graphic.children].filter(c=>c.tagName==='outline');
+    if(topOutlines.length>0){
+      const outlines=[];
+      topOutlines.forEach(ol=>{
+        const olMatEl=[...ol.children].find(c=>c.tagName==='matrix');
+        const olMat=olMatEl?parseMat(olMatEl):null;
+        const segs=parseOutline(ol);
+        if(segs.length>0){
+          outlines.push({layer:+(ol.getAttribute('layer')??0),matrix:olMat,segments:segs});
+        }
+      });
+      if(outlines.length>0){
+        groups.push({layer:0,matrix:null,outlines,shapeName:'',originalName:'',sgIdx:sgIdx++,isTopLevel:true});
+      }
+    }
+  }
+  
   return{namedLayers,groups,rawXml:xmlText};
 }
 
-function parseMat(el){return{x1:+el.getAttribute('x1'),y1:+el.getAttribute('y1'),x2:+el.getAttribute('x2'),y2:+el.getAttribute('y2'),xt:+el.getAttribute('xt'),yt:+el.getAttribute('yt')};}
+function parseMat(el){
+  const g = (attr) => { const v = el.getAttribute(attr); return v !== null ? parseFloat(v) : null; };
+  return {
+    x1: g('x1') ?? 1,
+    y1: g('y1') ?? 0,
+    x2: g('x2') ?? 0,
+    y2: g('y2') ?? 1,
+    xt: g('xt') ?? g('tx') ?? g('x3') ?? 0,
+    yt: g('yt') ?? g('ty') ?? g('y3') ?? 0
+  };
+}
 
 function parseOutline(ol){
   const segs=[];let cur={x:0,y:0};let pend=null;
@@ -488,35 +610,150 @@ function parseOutline(ol){
 function serializeGTK(file){
   const doc=new DOMParser().parseFromString(file.data.rawXml,'text/xml');
   const sgs=[...doc.querySelectorAll('shapegroup')];
-  file.data.groups.forEach((g,i)=>{
-    const sg=sgs[i];if(!sg)return;
+  
+  file.data.groups.forEach((g)=>{
+    if(g.isTopLevel)return; // top-level outlines are not shapegroups, skip
+    const sg=sgs[g.sgIdx];if(!sg)return;
+    
+    // For Auto-Grid: write updated translation back into the correct matrix.
+    // The group has a sg-level matrix (translation) and outline may have its own matrix (scale/rotation).
+    // We must write the translation into the sg-level matrix, not the outline matrix.
+    const sgMatEl=[...sg.children].find(c=>c.tagName==='matrix');
+    if(sgMatEl && g.matrix){
+      // The group matrix holds the world translation after auto-grid.
+      // Recompute: sg.matrix should hold translation, ol.matrix holds scale/rotation.
+      // Since chainMat(gmat, olMat) was applied at parse time, for save we only need
+      // to update the sg matrix's xt/yt (the translation portion).
+      // We store the final chained matrix on each outline; to restore the split:
+      // The ol.matrix (scale only) is already preserved in the original XML.
+      // We only need to update the sg matrix xt/yt.
+      sgMatEl.setAttribute('xt', g.matrix.xt.toFixed(4));
+      sgMatEl.setAttribute('yt', g.matrix.yt.toFixed(4));
+    }
+
     const newName=g.shapeName;
+    // Update the name attribute on the shapegroup element
+    sg.setAttribute('name', newName);
     let tl=sg.querySelector('textline');
-    if(!tl){tl=doc.createElement('textline');tl.setAttribute('layer','7');tl.setAttribute('glyphheight','13.00');const m=doc.createElement('matrix');m.setAttribute('x1','1');m.setAttribute('y1','0');m.setAttribute('x2','0');m.setAttribute('y2','1');m.setAttribute('xt','0');m.setAttribute('yt','0');tl.appendChild(m);const firstOutline=sg.querySelector('outline');sg.insertBefore(tl,firstOutline||null);}
+    
+    if(!tl){
+      tl=doc.createElement('textline');
+      tl.setAttribute('layer','7');
+      tl.setAttribute('glyphheight','13.00');
+      const m=doc.createElement('matrix');
+      m.setAttribute('x1','1');m.setAttribute('y1','0');
+      m.setAttribute('x2','0');m.setAttribute('y2','1');
+      m.setAttribute('xt','0.00');m.setAttribute('yt','0.00');
+      tl.appendChild(m);
+      const firstOutline=sg.querySelector('outline');
+      sg.insertBefore(tl,firstOutline||null);
+    }
+    
     [...tl.querySelectorAll('glyphinfo')].forEach(g=>g.remove());
     let xOff=0;
-    for(const ch of newName){const gi=doc.createElement('glyphinfo');gi.setAttribute('x1','13.00');gi.setAttribute('y1','0.00');gi.setAttribute('x2','0.00');gi.setAttribute('y2','13.00');gi.setAttribute('xt',xOff.toFixed(2));gi.setAttribute('yt','0.00');gi.setAttribute('char',String(ch.charCodeAt(0)));gi.setAttribute('font','STANDARD.FNT');tl.appendChild(gi);xOff+=7.5;}
+    for(const ch of newName){
+      const gi=doc.createElement('glyphinfo');
+      gi.setAttribute('x1','13.00');gi.setAttribute('y1','0.00');
+      gi.setAttribute('x2','0.00');gi.setAttribute('y2','13.00');
+      gi.setAttribute('xt',xOff.toFixed(2));gi.setAttribute('yt','0.00');
+      gi.setAttribute('char',String(ch.charCodeAt(0)));
+      gi.setAttribute('font','STANDARD.FNT');
+      tl.appendChild(gi);
+      xOff+=7.5;
+    }
   });
+  
   let out=new XMLSerializer().serializeToString(doc);
   out=out.replace(/^<\?xml[^?]*\?>\s*/,'');
   return out;
 }
 
 // ════════════════════════════════════
-//  MATH (GTK)
+//  ZCC PARSER  (Zünd Cut Center XML)
 // ════════════════════════════════════
+function parseZCC(xmlText){
+  const doc=new DOMParser().parseFromString(xmlText,'text/xml');
+  const zccRoot=doc.querySelector('ZCC_cmd');
+  const _zccVersion=zccRoot?zccRoot.getAttribute('Version'):'unknown';
+  const job=doc.querySelector('Job');
+  const jobName=job?job.getAttribute('Name'):'';
+  const meta={};
+  const desc=doc.querySelector('Meta Description');if(desc)meta.description=desc.textContent.trim();
+  const pri=doc.querySelector('Meta Priority');if(pri)meta.priority=pri.textContent.trim();
+  const creation=doc.querySelector('Creation');if(creation){meta.createdBy=creation.getAttribute('Name');meta.version=creation.getAttribute('Version');meta.date=creation.getAttribute('Date');}
+  const matEl=doc.querySelector('Material');
+  const material=matEl?{name:matEl.getAttribute('Name'),description:matEl.getAttribute('Description'),thickness:+doc.querySelector('MaterialSettings')?.getAttribute('Thickness')||0}:{name:'',description:'',thickness:0};
+
+  const METHOD_LAYERS={'Thru-cut':'Thru-cut','Draw':'Draw','{none}':'Meta'};
+  const layerColors={'Thru-cut':'#ffb347','Draw':'#00e5ff','Meta':'#5a6480'};
+
+  const outlines=[];
+  const geom=doc.querySelector('Geometry');
+  if(!geom)return{outlines:[],labels:[],namedLayers:{},bounds:{minX:0,minY:0,maxX:100,maxY:100,w:100,h:100},meta,material,jobName, _rawXml: xmlText};
+
+  geom.querySelectorAll('Outline').forEach(ol=>{
+    const pts=[];
+    let movePending=null;
+    for(const child of ol.children){
+      const tag=child.tagName;
+      if(tag==='MoveTo'){movePending={x:+child.getAttribute('X'),y:+child.getAttribute('Y')};}
+      else if(tag==='LineTo'){
+        const x=+child.getAttribute('X'),y=+child.getAttribute('Y');
+        if(movePending){pts.push({type:'move',x:movePending.x,y:movePending.y});movePending=null;}
+        pts.push({type:'line',x,y});
+      }
+      else if(tag==='ArcTo'){
+        const x=+child.getAttribute('X'),y=+child.getAttribute('Y'),cx=+child.getAttribute('CX'),cy=+child.getAttribute('CY');
+        if(movePending){pts.push({type:'move',x:movePending.x,y:movePending.y});movePending=null;}
+        pts.push({type:'arc',x,y,cx,cy});
+      }
+    }
+    if(movePending&&pts.length===0)pts.push({type:'move',x:movePending.x,y:movePending.y});
+    const meth=ol.querySelector('Method');
+    const methodType=meth?meth.getAttribute('Type'):'Draw';
+    const layer=METHOD_LAYERS[methodType]||methodType;
+    if(pts.length>0)outlines.push({pts,layer,methodType});
+  });
+
+  const labels=[];
+  geom.querySelectorAll('Label').forEach(lbl=>{
+    const text=lbl.getAttribute('Text');
+    const h=+lbl.getAttribute('Height')||10;
+    const angle=+lbl.getAttribute('Angle')||0;
+    const pos=lbl.querySelector('Position');
+    const meth=lbl.querySelector('Method');
+    const methodType=meth?meth.getAttribute('Type'):'Draw';
+    const layer=METHOD_LAYERS[methodType]||methodType;
+    if(pos&&text)labels.push({text,x:+pos.getAttribute('X'),y:+pos.getAttribute('Y'),height:h,angle,layer});
+  });
+
+  let mnX=Infinity,mnY=Infinity,mxX=-Infinity,mxY=-Infinity;
+  const touch=(x,y)=>{if(!isFinite(x)||!isFinite(y))return;if(x<mnX)mnX=x;if(x>mxX)mxX=x;if(y<mnY)mnY=y;if(y>mxY)mxY=y;};
+  outlines.forEach(ol=>ol.pts.forEach(p=>touch(p.x,p.y)));
+  labels.forEach(l=>touch(l.x,l.y));
+  if(!isFinite(mnX)){mnX=0;mnY=0;mxX=1000;mxY=500;}
+
+  const namedLayers={};
+  Object.entries(layerColors).forEach(([name,color])=>{namedLayers[name]={name,color};});
+
+  return{outlines,labels,namedLayers,bounds:{minX:mnX,minY:mnY,maxX:mxX,maxY:mxY,w:mxX-mnX,h:mxY-mnY},meta,material,jobName,_zccVersion,_rawXml:xmlText};
+}
+
 function applyMat(m,x,y){return{x:m.x1*x+m.x2*y+m.xt,y:m.y1*x+m.y2*y+m.yt};}
 
 function computeBoundsGTK(groups){
   let[mnX,mnY,mxX,mxY]=[Infinity,Infinity,-Infinity,-Infinity];
   const touch=(x,y)=>{if(x<mnX)mnX=x;if(x>mxX)mxX=x;if(y<mnY)mnY=y;if(y>mxY)mxY=y;};
-  groups.forEach(g=>g.outlines.forEach(ol=>ol.segments.forEach(s=>{
-    const tr=(x,y)=>g.matrix?applyMat(g.matrix,x,y):{x,y};
-    if(s.type==='move'){const p=tr(s.x,s.y);touch(p.x,p.y);}
-    else if(s.type==='line'){[tr(s.x1,s.y1),tr(s.x2,s.y2)].forEach(p=>touch(p.x,p.y));}
-    else if(s.type==='bezier'){[tr(s.x1,s.y1),tr(s.cp1x,s.cp1y),tr(s.cp2x,s.cp2y),tr(s.x2,s.y2)].forEach(p=>touch(p.x,p.y));}
-    else if(s.type==='arc'){[tr(s.x1,s.y1),tr(s.cpx,s.cpy),tr(s.x2,s.y2)].forEach(p=>touch(p.x,p.y));}
-  })));
+  groups.forEach(g=>g.outlines.forEach(ol=>{
+    const mat = ol.matrix || g.matrix;
+    ol.segments.forEach(s=>{
+      const tr=(x,y)=>mat?applyMat(mat,x,y):{x,y};
+      if(s.type==='move'){const p=tr(s.x,s.y);touch(p.x,p.y);}
+      else if(s.type==='line'){[tr(s.x1,s.y1),tr(s.x2,s.y2)].forEach(p=>touch(p.x,p.y));}
+      else if(s.type==='bezier'){[tr(s.x1,s.y1),tr(s.cp1x,s.cp1y),tr(s.cp2x,s.cp2y),tr(s.x2,s.y2)].forEach(p=>touch(p.x,p.y));}
+      else if(s.type==='arc'){[tr(s.x1,s.y1),tr(s.cpx,s.cpy),tr(s.x2,s.y2)].forEach(p=>touch(p.x,p.y));}
+    });
+  }));
   return{minX:mnX,minY:mnY,maxX:mxX,maxY:mxY,w:mxX-mnX,h:mxY-mnY};
 }
 
@@ -529,21 +766,46 @@ const ctx=canvas.getContext('2d');
 const wrap=document.getElementById('canvasWrap');
 const empty=document.getElementById('emptyState');
 
+let renderPending = false;
+
 function activeFile(){return state.activeIdx>=0?state.files[state.activeIdx]:null;}
 function isGTK(){const f=activeFile();return f&&f.type==='gtk';}
 
 // ════════════════════════════════════
 //  RENDER
 // ════════════════════════════════════
-function resize(){canvas.width=wrap.clientWidth;canvas.height=wrap.clientHeight;render();}
+function resize(){
+  const dpr = window.devicePixelRatio || 1;
+  const rect = wrap.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  canvas.style.width = rect.width + 'px';
+  canvas.style.height = rect.height + 'px';
+  scheduleRender();
+}
+
+function scheduleRender() {
+  if (!renderPending) {
+    renderPending = true;
+    requestAnimationFrame(() => {
+      render();
+      renderPending = false;
+    });
+  }
+}
 
 function render(){
-  const{activeIdx,files,zoom,panX,panY,hiddenLayers,showLabels,labelBasePx}=state;
+  const dpr = window.devicePixelRatio || 1;
+  ctx.setTransform(1, 0, 0, 1, 0, 0); 
   ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.scale(dpr, dpr); 
+
+  const{activeIdx,files,zoom,panX,panY,hiddenLayers,showLabels,labelBasePx}=state;
   if(activeIdx<0||!files[activeIdx])return;
   const f=files[activeIdx];
   if(f.type==='dxf') renderDXF(f,zoom,panX,panY,hiddenLayers,showLabels,labelBasePx);
-  else renderGTK(f,zoom,panX,panY,hiddenLayers,showLabels,labelBasePx);
+  else if(f.type==='gtk') renderGTK(f,zoom,panX,panY,hiddenLayers,showLabels,labelBasePx);
+  else if(f.type==='zcc') renderZCC(f,zoom,panX,panY,hiddenLayers,showLabels,labelBasePx);
 }
 
 function renderDXF(f,zoom,panX,panY,hiddenLayers,showLabels,labelBasePx){
@@ -558,10 +820,14 @@ function renderDXF(f,zoom,panX,panY,hiddenLayers,showLabels,labelBasePx){
   if(!showLabels)return;
   data.texts.forEach(t=>{
     if(hiddenLayers.has(t.layer)||!t.text)return;
-    const p=tc(t.x,t.y);if(p.x<-300||p.x>canvas.width+300||p.y<-50||p.y>canvas.height+50)return;
+    const p=tc(t.x,t.y);
+    const cvRect = canvas.getBoundingClientRect();
+    if(p.x<-300||p.x>cvRect.width+300||p.y<-50||p.y>cvRect.height+50)return;
     const fp=labelBasePx,pad=fp*0.4;ctx.font=`${fp}px "Space Mono",monospace`;const tw=ctx.measureText(t.text).width;
-    const pW=tw+pad*2,pH=fp+pad*2;ctx.fillStyle='rgba(10,12,18,0.82)';ctx.beginPath();if(ctx.roundRect)ctx.roundRect(p.x-pad,p.y-fp-pad,pW,pH,fp*0.22);else ctx.rect(p.x-pad,p.y-fp-pad,pW,pH);ctx.fill();
-    ctx.strokeStyle='rgba(0,229,255,0.3)';ctx.lineWidth=Math.max(0.5,fp*0.06);ctx.beginPath();if(ctx.roundRect)ctx.roundRect(p.x-pad,p.y-fp-pad,pW,pH,fp*0.22);else ctx.rect(p.x-pad,p.y-fp-pad,pW,pH);ctx.stroke();
+    const pW=tw+pad*2,pH=fp+pad*2;ctx.fillStyle='rgba(10,12,18,0.82)';ctx.beginPath();
+    drawRect(ctx, p.x-pad, p.y-fp-pad, pW, pH, fp*0.22); ctx.fill();
+    ctx.strokeStyle='rgba(0,229,255,0.3)';ctx.lineWidth=Math.max(0.5,fp*0.06);ctx.beginPath();
+    drawRect(ctx, p.x-pad, p.y-fp-pad, pW, pH, fp*0.22); ctx.stroke();
     ctx.lineWidth=1;ctx.fillStyle='rgba(0,229,255,0.92)';ctx.textAlign='left';ctx.textBaseline='alphabetic';ctx.fillText(t.text,p.x,p.y);
   });
 }
@@ -575,7 +841,11 @@ function renderGTK(f,zoom,panX,panY,hiddenLayers,showLabels,labelBasePx){
       if(hiddenLayers.has(ol.layer))return;
       let color=namedLayers[ol.layer]?.color??'#ffffff';if(color==='rgb(0,0,0)')color='#e4e8f0';
       ctx.beginPath();ctx.strokeStyle=color;ctx.lineWidth=1;ctx.lineJoin='round';ctx.lineCap='round';
-      const tr=(x,y)=>{const p=g.matrix?applyMat(g.matrix,x,y):{x,y};return tc(p.x,p.y);};let moved=false;
+      
+      const mat = ol.matrix || g.matrix;
+      const tr=(x,y)=>{const p=mat?applyMat(mat,x,y):{x,y};return tc(p.x,p.y);};
+      
+      let moved=false;
       ol.segments.forEach(s=>{
         if(s.type==='move'){const p=tr(s.x,s.y);ctx.moveTo(p.x,p.y);moved=true;}
         else if(s.type==='line'){if(!moved){const p=tr(s.x1,s.y1);ctx.moveTo(p.x,p.y);moved=true;}const p=tr(s.x2,s.y2);ctx.lineTo(p.x,p.y);}
@@ -586,37 +856,283 @@ function renderGTK(f,zoom,panX,panY,hiddenLayers,showLabels,labelBasePx){
     });
   });
   if(!showLabels)return;
+  const cvRect = canvas.getBoundingClientRect();
   ctx.textAlign='center';ctx.textBaseline='middle';
   groups.forEach(g=>{
     if(!g.shapeName)return;
     let[mnX,mnY,mxX,mxY]=[Infinity,Infinity,-Infinity,-Infinity];
-    const tr=(x,y)=>{const p=g.matrix?applyMat(g.matrix,x,y):{x,y};return tc(p.x,p.y);};
-    g.outlines.forEach(ol=>{if(hiddenLayers.has(ol.layer))return;ol.segments.forEach(s=>{const pts=[];if(s.type==='move')pts.push(tr(s.x,s.y));else if(s.type==='line')pts.push(tr(s.x1,s.y1),tr(s.x2,s.y2));else if(s.type==='bezier')pts.push(tr(s.x1,s.y1),tr(s.cp1x,s.cp1y),tr(s.cp2x,s.cp2y),tr(s.x2,s.y2));else if(s.type==='arc')pts.push(tr(s.x1,s.y1),tr(s.cpx,s.cpy),tr(s.x2,s.y2));pts.forEach(p=>{if(p.x<mnX)mnX=p.x;if(p.x>mxX)mxX=p.x;if(p.y<mnY)mnY=p.y;if(p.y>mxY)mxY=p.y;});});});
+    
+    g.outlines.forEach(ol=>{
+      const mat = ol.matrix || g.matrix;
+      if(hiddenLayers.has(ol.layer))return;
+      ol.segments.forEach(s=>{
+        const tr=(x,y)=>{const p=mat?applyMat(mat,x,y):{x,y};return tc(p.x,p.y);};
+        const pts=[];
+        if(s.type==='move')pts.push(tr(s.x,s.y));
+        else if(s.type==='line')pts.push(tr(s.x1,s.y1),tr(s.x2,s.y2));
+        else if(s.type==='bezier')pts.push(tr(s.x1,s.y1),tr(s.cp1x,s.cp1y),tr(s.cp2x,s.cp2y),tr(s.x2,s.y2));
+        else if(s.type==='arc')pts.push(tr(s.x1,s.y1),tr(s.cpx,s.cpy),tr(s.x2,s.y2));
+        pts.forEach(p=>{if(p.x<mnX)mnX=p.x;if(p.x>mxX)mxX=p.x;if(p.y<mnY)mnY=p.y;if(p.y>mxY)mxY=p.y;});
+      });
+    });
     if(!isFinite(mnX))return;
-    const bW=mxX-mnX,bH=mxY-mnY;if(bW<8||bH<8)return;if(mxX<0||mnX>canvas.width||mxY<0||mnY>canvas.height)return;
+    const bW=mxX-mnX,bH=mxY-mnY;if(bW<8||bH<8)return;if(mxX<0||mnX>cvRect.width||mxY<0||mnY>cvRect.height)return;
     const cx=(mnX+mxX)/2,cy=(mnY+mxY)/2;const label=g.shapeName;
-    let fp=labelBasePx*zoom;ctx.font=`${fp}px "Space Mono",monospace`;let tw=ctx.measureText(label).width;
+    
+    let fp = Math.max(bW, bH) * (labelBasePx / 60); 
+    ctx.font=`${fp}px "Space Mono",monospace`;let tw=ctx.measureText(label).width;
+    
     const maxW=bW*0.90;if(tw+fp*0.9>maxW){fp=fp*(maxW/(tw+fp*0.9));fp=Math.max(fp,1);ctx.font=`${fp}px "Space Mono",monospace`;tw=ctx.measureText(label).width;}
     const maxH=bH*0.65;if(fp*1.9>maxH){fp=maxH/1.9;fp=Math.max(fp,1);ctx.font=`${fp}px "Space Mono",monospace`;tw=ctx.measureText(label).width;}
+    
     if(fp<4)return;
+    
     const pad=fp*0.42,pW=tw+pad*2,pH=fp+pad*2,rx=cx-pW/2,ry=cy-pH/2,rr=fp*0.28;
-    ctx.fillStyle='rgba(10,12,18,0.82)';ctx.beginPath();ctx.roundRect(rx,ry,pW,pH,rr);ctx.fill();
-    ctx.strokeStyle='rgba(168,255,120,0.45)';ctx.lineWidth=Math.max(0.5,fp*0.07);ctx.beginPath();ctx.roundRect(rx,ry,pW,pH,rr);ctx.stroke();
+    ctx.fillStyle='rgba(10,12,18,0.82)';ctx.beginPath();
+    drawRect(ctx, rx, ry, pW, pH, rr); ctx.fill();
+    ctx.strokeStyle='rgba(168,255,120,0.45)';ctx.lineWidth=Math.max(0.5,fp*0.07);ctx.beginPath();
+    drawRect(ctx, rx, ry, pW, pH, rr); ctx.stroke();
     ctx.fillStyle='rgba(168,255,120,0.95)';ctx.fillText(label,cx,cy);
   });
 }
 
 // ════════════════════════════════════
-//  FIT / ZOOM
+//  ZCC RENDERER
 // ════════════════════════════════════
+function renderZCC(f,zoom,panX,panY,hiddenLayers,showLabels,labelBasePx){
+  const{data,bounds}=f;
+  const tc=(wx,wy)=>({x:(wx-bounds.minX)*zoom+panX,y:(bounds.maxY-wy)*zoom+panY});
+  ctx.lineJoin='round';ctx.lineCap='round';
+
+  data.outlines.forEach(ol=>{
+    if(hiddenLayers.has(ol.layer))return;
+    const color=data.namedLayers[ol.layer]?.color||'#e4e8f0';
+    const isThru=ol.layer==='Thru-cut';
+    ctx.beginPath();
+    ctx.strokeStyle=color;
+    ctx.lineWidth=isThru?1.5:0.8;
+    ctx.setLineDash(isThru?[]:[4,3]);
+    let curX=0,curY=0;
+    ol.pts.forEach(p=>{
+      if(p.type==='move'){const s=tc(p.x,p.y);ctx.moveTo(s.x,s.y);curX=p.x;curY=p.y;}
+      else if(p.type==='line'){const s=tc(p.x,p.y);ctx.lineTo(s.x,s.y);curX=p.x;curY=p.y;}
+      else if(p.type==='arc'){
+        const ep=tc(p.x,p.y),cp=tc(p.cx,p.cy);
+        ctx.quadraticCurveTo(cp.x,cp.y,ep.x,ep.y);
+        curX=p.x;curY=p.y;
+      }
+    });
+    ctx.stroke();
+    ctx.setLineDash([]);
+  });
+
+  if(!showLabels)return;
+  const cvRect = canvas.getBoundingClientRect();
+
+  data.labels.forEach(lbl=>{
+    if(hiddenLayers.has(lbl.layer))return;
+    const p=tc(lbl.x,lbl.y);
+    
+    if(p.x<-2000||p.x>cvRect.width+2000||p.y<-2000||p.y>cvRect.height+2000)return;
+    
+    let fp = (lbl.height || 10) * zoom * (labelBasePx / 14);
+    fp = Math.max(fp, 2);
+
+    ctx.save();
+    ctx.translate(p.x,p.y);
+    if(lbl.angle!==0)ctx.rotate(-lbl.angle*Math.PI/180);
+    ctx.font=`${fp}px "Space Mono",monospace`;
+    const tw=ctx.measureText(lbl.text).width;
+    const pad=fp*0.35,pW=tw+pad*2,pH=fp+pad*2;
+    ctx.fillStyle='rgba(10,12,18,0.82)';
+    ctx.beginPath();
+    drawRect(ctx, -pad, -fp-pad, pW, pH, fp*0.2); ctx.fill();
+    ctx.strokeStyle='rgba(255,179,71,0.35)';ctx.lineWidth=Math.max(0.5,fp*0.06);
+    ctx.beginPath();
+    drawRect(ctx, -pad, -fp-pad, pW, pH, fp*0.2); ctx.stroke();
+    ctx.lineWidth=1;ctx.fillStyle='rgba(255,179,71,0.92)';ctx.textAlign='left';ctx.textBaseline='alphabetic';
+    ctx.fillText(lbl.text,0,0);
+    ctx.restore();
+  });
+}
+
+// ════════════════════════════════════
+//  GTK AUTO-GRID FEATURE
+// ════════════════════════════════════
+function autoGridGTK() {
+  if (state.activeIdx < 0) return;
+  const f = state.files[state.activeIdx];
+  if (f.type !== 'gtk') return;
+
+  const groups = f.data.groups;
+
+  // ── Step 1: compute each group's WORLD-SPACE bounding box
+  //    using the FULL matrix (rotation + scale + current translation).
+  //    This tells us where each shape actually sits right now.
+  function worldBBox(g) {
+    let mnX=Infinity,mnY=Infinity,mxX=-Infinity,mxY=-Infinity;
+    g.outlines.forEach(ol => {
+      const mat = ol.matrix || g.matrix;
+      ol.segments.forEach(s => {
+        const tr = (x,y) => mat ? applyMat(mat,x,y) : {x,y};
+        const pts = [];
+        if(s.type==='move') pts.push(tr(s.x,s.y));
+        else if(s.type==='line') pts.push(tr(s.x1,s.y1),tr(s.x2,s.y2));
+        else if(s.type==='bezier') pts.push(tr(s.x1,s.y1),tr(s.cp1x,s.cp1y),tr(s.cp2x,s.cp2y),tr(s.x2,s.y2));
+        else if(s.type==='arc') pts.push(tr(s.x1,s.y1),tr(s.cpx,s.cpy),tr(s.x2,s.y2));
+        pts.forEach(p=>{ if(p.x<mnX)mnX=p.x; if(p.x>mxX)mxX=p.x; if(p.y<mnY)mnY=p.y; if(p.y>mxY)mxY=p.y; });
+      });
+    });
+    if(!isFinite(mnX)){mnX=0;mxX=0;mnY=0;mxY=0;}
+    return {minX:mnX,minY:mnY,maxX:mxX,maxY:mxY,w:mxX-mnX,h:mxY-mnY};
+  }
+
+  // ── Step 2: compute LOCAL (translation-stripped) bounding box.
+  //    This gives the true shape size, independent of where it is placed.
+  function localBBox(g) {
+    let mnX=Infinity,mnY=Infinity,mxX=-Infinity,mxY=-Infinity;
+    g.outlines.forEach(ol => {
+      // Strip only the translation from the matrix — keep scale/rotation
+      const mat = ol.matrix || g.matrix;
+      const m = mat ? {...mat, xt:0, yt:0} : {x1:1,y1:0,x2:0,y2:1,xt:0,yt:0};
+      ol.segments.forEach(s => {
+        const tr = (x,y) => applyMat(m,x,y);
+        const pts = [];
+        if(s.type==='move') pts.push(tr(s.x,s.y));
+        else if(s.type==='line') pts.push(tr(s.x1,s.y1),tr(s.x2,s.y2));
+        else if(s.type==='bezier') pts.push(tr(s.x1,s.y1),tr(s.cp1x,s.cp1y),tr(s.cp2x,s.cp2y),tr(s.x2,s.y2));
+        else if(s.type==='arc') pts.push(tr(s.x1,s.y1),tr(s.cpx,s.cpy),tr(s.x2,s.y2));
+        pts.forEach(p=>{ if(p.x<mnX)mnX=p.x; if(p.x>mxX)mxX=p.x; if(p.y<mnY)mnY=p.y; if(p.y>mxY)mxY=p.y; });
+      });
+    });
+    if(!isFinite(mnX)){mnX=0;mxX=0;mnY=0;mxY=0;}
+    return {minX:mnX,minY:mnY,w:mxX-mnX,h:mxY-mnY};
+  }
+
+  // ── Step 3: detect containment — if group A's world bbox fully contains
+  //    group B's world bbox, then B is nested inside A (with tolerance).
+  const worldBoxes = groups.map(g => worldBBox(g));
+  const TOL = 5;
+  function contains(a, b) {
+    return a.minX-TOL <= b.minX && a.maxX+TOL >= b.maxX &&
+           a.minY-TOL <= b.minY && a.maxY+TOL >= b.maxY;
+  }
+  // A group is "nested" if another group fully contains it
+  const isNested = groups.map((g, i) => {
+    for(let j=0; j<groups.length; j++) {
+      if(i!==j && contains(worldBoxes[j], worldBoxes[i]) && worldBoxes[j].w > worldBoxes[i].w+1) return true;
+    }
+    return false;
+  });
+
+  // ── Step 4: layout — only position top-level (non-nested) groups.
+  //    Nested groups keep their RELATIVE offset from their parent's local origin,
+  //    so they naturally move with the parent.
+  const margin = 20;
+  const colCount = Math.max(3, Math.ceil(Math.sqrt(groups.filter((_,i)=>!isNested[i]).length)));
+  const maxWidth = colCount * 1200;
+
+  let currentX = 0;
+  let currentY = 0; // Y decreases per row (GTK Y-axis goes up, screen goes down = lower Y)
+  let rowHeight = 0;
+
+  // For each nested group, record its world-space offset relative to parent's world bbox
+  // so we can re-apply it after the parent is moved.
+  const parentOf = new Array(groups.length).fill(-1);
+  for(let i=0; i<groups.length; i++) {
+    if(!isNested[i]) continue;
+    // Find the smallest containing parent
+    let bestParent = -1, bestArea = Infinity;
+    for(let j=0; j<groups.length; j++) {
+      if(j===i || isNested[j]) continue; // parents must be top-level
+      if(contains(worldBoxes[j], worldBoxes[i])) {
+        const area = worldBoxes[j].w * worldBoxes[j].h;
+        if(area < bestArea) { bestArea=area; bestParent=j; }
+      }
+    }
+    parentOf[i] = bestParent;
+  }
+
+  // Compute relative offset of each nested child within its parent (in world space)
+  const relOffset = groups.map((g,i) => {
+    if(parentOf[i] < 0) return null;
+    const pw = worldBoxes[parentOf[i]];
+    const cw = worldBoxes[i];
+    return { dx: cw.minX - pw.minX, dy: cw.minY - pw.minY, w: cw.w, h: cw.h };
+  });
+
+  // Layout top-level groups
+  groups.forEach((g, i) => {
+    if(isNested[i]) return; // skip — will be positioned via parent
+
+    const lb = localBBox(g);
+    const w = lb.w, h = lb.h;
+
+    // Wrap to next row if needed
+    if(currentX > 0 && currentX + w > maxWidth) {
+      currentX = 0;
+      currentY -= rowHeight + margin; // go lower on screen = smaller Y in GTK coords
+      rowHeight = 0;
+    }
+
+    // Desired world position: (currentX, currentY) at the local (minX, minY) corner
+    const targetXt = currentX - lb.minX;
+    const targetYt = currentY - lb.minY;
+
+    // Apply translation to all outlines of this group
+    g.outlines.forEach(ol => {
+      if(!ol.matrix) ol.matrix = g.matrix ? {...g.matrix} : {x1:1,y1:0,x2:0,y2:1,xt:0,yt:0};
+      ol.matrix.xt = targetXt;
+      ol.matrix.yt = targetYt;
+    });
+
+    currentX += w + margin;
+    rowHeight = Math.max(rowHeight, h);
+  });
+
+  // ── Step 5: reposition nested children to maintain their relative position
+  //    within the parent's new world bbox.
+  groups.forEach((g, i) => {
+    if(parentOf[i] < 0) return;
+    const pi = parentOf[i];
+    const rel = relOffset[i];
+    if(!rel) return;
+
+    // Parent's new world bbox (recompute after moving parent)
+    const newParentBBox = worldBBox(groups[pi]);
+    const newChildMinX = newParentBBox.minX + rel.dx;
+    const newChildMinY = newParentBBox.minY + rel.dy;
+
+    // Child's local bbox (translation-stripped)
+    const clb = localBBox(g);
+
+    const targetXt = newChildMinX - clb.minX;
+    const targetYt = newChildMinY - clb.minY;
+
+    g.outlines.forEach(ol => {
+      if(!ol.matrix) ol.matrix = g.matrix ? {...g.matrix} : {x1:1,y1:0,x2:0,y2:1,xt:0,yt:0};
+      ol.matrix.xt = targetXt;
+      ol.matrix.yt = targetYt;
+    });
+  });
+
+  f.bounds = computeBoundsGTK(f.data.groups);
+  f.data.isDirty = true;
+  updateDirtyBadge();
+  updateInfo();
+  fitToScreen();
+}
+
+
 function fitToScreen(){
   if(state.activeIdx<0)return;
   const{bounds}=state.files[state.activeIdx];if(!bounds||bounds.w===0)return;
   const pad=50;
-  state.zoom=Math.min((canvas.width-pad*2)/bounds.w,(canvas.height-pad*2)/bounds.h,4);
-  state.panX=(canvas.width-bounds.w*state.zoom)/2;
-  state.panY=(canvas.height-bounds.h*state.zoom)/2;
-  updateZoomUI();render();
+  const cvRect = wrap.getBoundingClientRect();
+  state.zoom=Math.min((cvRect.width-pad*2)/bounds.w,(cvRect.height-pad*2)/bounds.h,4);
+  state.panX=(cvRect.width-bounds.w*state.zoom)/2;
+  state.panY=(cvRect.height-bounds.h*state.zoom)/2;
+  updateZoomUI();scheduleRender();
 }
 function updateZoomUI(){document.getElementById('zoomLevel').textContent=Math.round(state.zoom*100)+'%';}
 
@@ -624,8 +1140,18 @@ function panToText(idx){
   if(state.activeIdx<0)return;
   const{data,bounds}=state.files[state.activeIdx];
   const t=data.texts[idx];if(!t)return;
-  state.panX=canvas.width/2-(t.x-bounds.minX)*state.zoom;
-  state.panY=canvas.height/2-(bounds.maxY-t.y)*state.zoom;render();
+  const cvRect = wrap.getBoundingClientRect();
+  state.panX=cvRect.width/2-(t.x-bounds.minX)*state.zoom;
+  state.panY=cvRect.height/2-(bounds.maxY-t.y)*state.zoom;scheduleRender();
+}
+
+function panToZCCLabel(idx){
+  if(state.activeIdx<0)return;
+  const{data,bounds}=state.files[state.activeIdx];
+  const lbl=data.labels[idx];if(!lbl)return;
+  const cvRect = wrap.getBoundingClientRect();
+  state.panX=cvRect.width/2-(lbl.x-bounds.minX)*state.zoom;
+  state.panY=cvRect.height/2-(bounds.maxY-lbl.y)*state.zoom;scheduleRender();
 }
 
 function panToGroup(gIdx){
@@ -633,19 +1159,23 @@ function panToGroup(gIdx){
   const{data,bounds}=state.files[state.activeIdx];
   const g=data.groups[gIdx];if(!g)return;
   let[mnX,mnY,mxX,mxY]=[Infinity,Infinity,-Infinity,-Infinity];
-  g.outlines.forEach(ol=>ol.segments.forEach(s=>{
-    const tr=(x,y)=>g.matrix?applyMat(g.matrix,x,y):{x,y};const pts=[];
-    if(s.type==='move')pts.push(tr(s.x,s.y));
-    else if(s.type==='line')pts.push(tr(s.x1,s.y1),tr(s.x2,s.y2));
-    else if(s.type==='bezier')pts.push(tr(s.x2,s.y2));
-    else if(s.type==='arc')pts.push(tr(s.x2,s.y2));
-    pts.forEach(p=>{if(p.x<mnX)mnX=p.x;if(p.x>mxX)mxX=p.x;if(p.y<mnY)mnY=p.y;if(p.y>mxY)mxY=p.y;});
-  }));
+  g.outlines.forEach(ol=>{
+    const mat = ol.matrix || g.matrix;
+    ol.segments.forEach(s=>{
+      const tr=(x,y)=>mat?applyMat(mat,x,y):{x,y};const pts=[];
+      if(s.type==='move')pts.push(tr(s.x,s.y));
+      else if(s.type==='line')pts.push(tr(s.x1,s.y1),tr(s.x2,s.y2));
+      else if(s.type==='bezier')pts.push(tr(s.x2,s.y2));
+      else if(s.type==='arc')pts.push(tr(s.x2,s.y2));
+      pts.forEach(p=>{if(p.x<mnX)mnX=p.x;if(p.x>mxX)mxX=p.x;if(p.y<mnY)mnY=p.y;if(p.y>mxY)mxY=p.y;});
+    });
+  });
   if(!isFinite(mnX))return;
   const wcx=(mnX+mxX)/2,wcy=(mnY+mxY)/2;
   const wcy_f=bounds.maxY-(wcy-bounds.minY);
-  state.panX=canvas.width/2-(wcx-bounds.minX)*state.zoom;
-  state.panY=canvas.height/2-wcy_f*state.zoom;render();
+  const cvRect = wrap.getBoundingClientRect();
+  state.panX=cvRect.width/2-(wcx-bounds.minX)*state.zoom;
+  state.panY=cvRect.height/2-wcy_f*state.zoom;scheduleRender();
 }
 
 // ════════════════════════════════════
@@ -685,9 +1215,29 @@ function loadGTK(name,text){
   },10);
 }
 
+function loadZCC(name,text){
+  const lb=document.getElementById('loadingBar');lb.classList.add('active');
+  setTimeout(()=>{
+    try{
+      const data=parseZCC(text);
+      const pathCount=data.outlines.length;
+      const labelCount=data.labels.length;
+      const fo={name,type:'zcc',data,bounds:data.bounds,pathCount,labelCount};
+      const ex=state.files.findIndex(f=>f.name===name);
+      if(ex>=0){state.files[ex]=fo;state.activeIdx=ex;}else{state.files.push(fo);state.activeIdx=state.files.length-1;}
+      state.hiddenLayers=new Set();empty.classList.add('hidden');
+      document.getElementById('saveBtn').disabled=true;
+      buildTabs();buildLayers();buildShapeList();updateInfo();fitToScreen();
+    }catch(e){alert('Error parsing ZCC: '+e.message);console.error(e);}
+    lb.classList.remove('active');
+  },10);
+}
+
 function updateSaveBtn(){
   const f=activeFile();
-  document.getElementById('saveBtn').disabled=!(f&&f.type==='gtk');
+  const isGtk = (f && f.type === 'gtk');
+  document.getElementById('saveBtn').disabled = !isGtk;
+  document.getElementById('autoGridBtn').style.display = isGtk ? 'flex' : 'none';
 }
 
 function saveGTK(){
@@ -699,6 +1249,7 @@ function saveGTK(){
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');a.href=url;a.download=file.name.replace(/\.gtk$/i,'')+'_edited.gtk';a.click();URL.revokeObjectURL(url);
   file.data.groups.forEach(g=>{g.originalName=g.shapeName;});
+  file.data.isDirty = false;
   updateDirtyBadge();
 }
 
@@ -710,7 +1261,8 @@ function buildTabs(){
   state.files.forEach((f,i)=>{
     const tab=document.createElement('div');
     const isGtk=f.type==='gtk';
-    tab.className='file-tab'+(isGtk?' gtk-tab':'')+(i===state.activeIdx?' active':'');
+    const isZcc=f.type==='zcc';
+    tab.className='file-tab'+(isGtk?' gtk-tab':'')+(isZcc?' zcc-tab':'')+(i===state.activeIdx?' active':'');
     tab.innerHTML=`<div class="dot"></div><span class="type-badge">${f.type.toUpperCase()}</span>${esc(f.name)}`;
     tab.onclick=()=>{state.activeIdx=i;state.hiddenLayers=new Set();buildTabs();buildLayers();buildShapeList();updateInfo();fitToScreen();updateSaveBtn();};
     el.appendChild(tab);
@@ -724,6 +1276,7 @@ function buildLayers(){
   const badge=document.getElementById('modeBadge');
   const modeText=document.getElementById('modeText');
   badge.style.display='inline-flex';
+  
   if(f.type==='gtk'){
     badge.className='mode-badge gtk';modeText.textContent='GTK';
     document.getElementById('labelOptLabel').textContent='Shape names';
@@ -737,7 +1290,23 @@ function buildLayers(){
       item.className='layer-item'+(state.hiddenLayers.has(layer.layer)?' hidden':'');
       const sc=layer.color==='rgb(0,0,0)'?'#e4e8f0':layer.color;
       item.innerHTML=`<div class="layer-swatch" style="background:${sc}"></div><div class="layer-name">${esc(layer.name)}</div><div class="layer-count">${cnt}</div><svg class="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
-      item.onclick=()=>{state.hiddenLayers.has(layer.layer)?state.hiddenLayers.delete(layer.layer):state.hiddenLayers.add(layer.layer);buildLayers();render();};
+      item.onclick=()=>{state.hiddenLayers.has(layer.layer)?state.hiddenLayers.delete(layer.layer):state.hiddenLayers.add(layer.layer);buildLayers();scheduleRender();};
+      el.appendChild(item);
+    });
+  } else if(f.type==='zcc'){
+    badge.className='mode-badge zcc';modeText.textContent='ZCC';
+    document.getElementById('labelOptLabel').textContent='Labels';
+    document.getElementById('shapesTitle').textContent='Labels';
+    document.getElementById('iGLabel').textContent='LABELS';
+    const{data}=f;const counts={};
+    data.outlines.forEach(ol=>{counts[ol.layer]=(counts[ol.layer]||0)+1;});
+    data.labels.forEach(l=>{counts[l.layer]=(counts[l.layer]||0)+1;});
+    Object.values(data.namedLayers).forEach(layer=>{
+      const cnt=counts[layer.name]||0;
+      const item=document.createElement('div');
+      item.className='layer-item'+(state.hiddenLayers.has(layer.name)?' hidden':'');
+      item.innerHTML=`<div class="layer-swatch" style="background:${layer.color}"></div><div class="layer-name">${esc(layer.name)}</div><div class="layer-count">${cnt}</div><svg class="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+      item.onclick=()=>{state.hiddenLayers.has(layer.name)?state.hiddenLayers.delete(layer.name):state.hiddenLayers.add(layer.name);buildLayers();scheduleRender();};
       el.appendChild(item);
     });
   } else {
@@ -745,15 +1314,14 @@ function buildLayers(){
     document.getElementById('labelOptLabel').textContent='Shape labels';
     document.getElementById('shapesTitle').textContent='Shapes';
     document.getElementById('iGLabel').textContent='TEXTS';
-    const{data}=f;const counts={};
-    [...data.polylines,...data.lines,...data.arcs,...data.circles,...data.texts].forEach(e=>{counts[e.layer]=(counts[e.layer]||0)+1;});
+    const{data}=f;const counts={};[...data.polylines,...data.lines,...data.arcs,...data.circles,...data.texts].forEach(e=>{counts[e.layer]=(counts[e.layer]||0)+1;});
     Object.values(data.namedLayers).forEach(layer=>{
       const cnt=counts[layer.name]||0;if(!cnt)return;
       const item=document.createElement('div');
       item.className='layer-item'+(state.hiddenLayers.has(layer.name)?' hidden':'');
       const sc=layer.color==='#ffffff'?'#e4e8f0':layer.color;
       item.innerHTML=`<div class="layer-swatch" style="background:${sc}"></div><div class="layer-name">${esc(layer.name)}</div><div class="layer-count">${cnt}</div><svg class="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
-      item.onclick=()=>{state.hiddenLayers.has(layer.name)?state.hiddenLayers.delete(layer.name):state.hiddenLayers.add(layer.name);buildLayers();render();};
+      item.onclick=()=>{state.hiddenLayers.has(layer.name)?state.hiddenLayers.delete(layer.name):state.hiddenLayers.add(layer.name);buildLayers();scheduleRender();};
       el.appendChild(item);
     });
   }
@@ -763,18 +1331,29 @@ function buildShapeList(){
   const el=document.getElementById('shapeList');el.innerHTML='';
   if(state.activeIdx<0)return;
   const f=state.files[state.activeIdx];
+  const dirtyBadge = document.getElementById('dirtyBadge');
+  
   if(f.type==='gtk'){
     f.data.groups.forEach((g,i)=>{
       const dirty=g.shapeName!==g.originalName;
       const row=document.createElement('div');row.className='shape-item';row.id=`sr-${i}`;
       row.innerHTML=`<span class="shape-idx">${i+1}</span><input class="shape-name-input${dirty?' dirty':''}" type="text" value="${esc(g.shapeName)}" placeholder="(unnamed)" data-idx="${i}"><button class="locate-btn" data-idx="${i}" title="Pan to shape"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>`;
       const inp=row.querySelector('.shape-name-input');
-      inp.addEventListener('input',()=>{f.data.groups[i].shapeName=inp.value;inp.classList.toggle('dirty',inp.value!==f.data.groups[i].originalName);updateDirtyBadge();render();});
+      inp.addEventListener('input',()=>{f.data.groups[i].shapeName=inp.value;inp.classList.toggle('dirty',inp.value!==f.data.groups[i].originalName);updateDirtyBadge();scheduleRender();});
       inp.addEventListener('keydown',e=>{if(e.key==='Enter')inp.blur();});
       row.querySelector('.locate-btn').addEventListener('click',()=>{panToGroup(i);canvas.classList.add('do-flash');setTimeout(()=>canvas.classList.remove('do-flash'),1200);});
       el.appendChild(row);
     });
     updateDirtyBadge();
+  } else if(f.type==='zcc'){
+    f.data.labels.forEach((lbl,i)=>{
+      const row=document.createElement('div');row.className='shape-item';
+      const angleStr=lbl.angle?` ∠${lbl.angle}°`:'';
+      row.innerHTML=`<span class="shape-idx">${i+1}</span><span class="shape-label" title="${esc(lbl.text)} (${lbl.layer}${angleStr})" style="color:var(--accent-zcc)">${esc(lbl.text)}</span><button class="locate-btn" title="Pan to label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>`;
+      row.querySelector('.locate-btn').addEventListener('click',()=>{panToZCCLabel(i);canvas.classList.add('do-flash');setTimeout(()=>canvas.classList.remove('do-flash'),1200);});
+      el.appendChild(row);
+    });
+    dirtyBadge.style.display='none';
   } else {
     f.data.texts.forEach((t,i)=>{
       const row=document.createElement('div');row.className='shape-item';
@@ -782,7 +1361,7 @@ function buildShapeList(){
       row.querySelector('.locate-btn').addEventListener('click',()=>{panToText(i);canvas.classList.add('do-flash');setTimeout(()=>canvas.classList.remove('do-flash'),1200);});
       el.appendChild(row);
     });
-    document.getElementById('dirtyBadge').style.display='none';
+    dirtyBadge.style.display='none';
   }
 }
 
@@ -790,7 +1369,7 @@ function updateDirtyBadge(){
   if(state.activeIdx<0)return;
   const f=state.files[state.activeIdx];
   if(f.type!=='gtk'){document.getElementById('dirtyBadge').style.display='none';return;}
-  const any=f.data.groups.some(g=>g.shapeName!==g.originalName);
+  const any=f.data.groups.some(g=>g.shapeName!==g.originalName) || f.data.isDirty;
   document.getElementById('dirtyBadge').style.display=any?'inline':'none';
 }
 
@@ -800,12 +1379,27 @@ function updateInfo(){
   document.getElementById('iW').textContent=f.bounds.w.toFixed(1)+' mm';
   document.getElementById('iH').textContent=f.bounds.h.toFixed(1)+' mm';
   document.getElementById('iP').textContent=f.pathCount;
-  document.getElementById('iG').textContent=f.type==='gtk'?f.groupCount:f.data.texts.length;
+  document.getElementById('iG').textContent=f.type==='gtk'?f.groupCount:(f.type==='zcc'?f.labelCount:f.data.texts.length);
   document.getElementById('iFN').textContent=f.name;
+  
+  const zccMetaEl=document.getElementById('zccMeta');
+  if(f.type==='zcc'){
+    zccMetaEl.style.display='block';
+    document.getElementById('iMat').textContent=`${f.data.material.name} — ${f.data.material.description}`;
+    document.getElementById('iThick').textContent=f.data.material.thickness+' mm';
+    
+    const doc2=new DOMParser().parseFromString(f.data._rawXml||'<r/>','text/xml');
+    const zRoot=doc2.querySelector('ZCC_cmd');
+    const vStr=zRoot?zRoot.getAttribute('Version'):f.data._zccVersion;
+    
+    document.getElementById('iZccVer').textContent=vStr||'3040';
+  } else {
+    zccMetaEl.style.display='none';
+  }
 }
 
-function toggleLabels(){state.showLabels=!state.showLabels;document.getElementById('labelTrack').classList.toggle('on',state.showLabels);render();}
-function onTextSize(v){state.labelBasePx=+v;document.getElementById('sliderVal').textContent=v;render();}
+function toggleLabels(){state.showLabels=!state.showLabels;document.getElementById('labelTrack').classList.toggle('on',state.showLabels);scheduleRender();}
+function onTextSize(v){state.labelBasePx=+v;document.getElementById('sliderVal').textContent=v;scheduleRender();}
 function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
 // ════════════════════════════════════
@@ -815,8 +1409,8 @@ let dragging=false,lastX=0,lastY=0;
 wrap.addEventListener('mousedown',e=>{if(e.target.closest('input,button,a'))return;dragging=true;lastX=e.clientX;lastY=e.clientY;});
 window.addEventListener('mouseup',()=>{dragging=false;});
 window.addEventListener('mousemove',e=>{
-  if(dragging){state.panX+=e.clientX-lastX;state.panY+=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;render();}
-  const r=canvas.getBoundingClientRect();
+  if(dragging){state.panX+=e.clientX-lastX;state.panY+=e.clientY-lastY;lastX=e.clientX;lastY=e.clientY;scheduleRender();}
+  const r=wrap.getBoundingClientRect();
   if(state.activeIdx>=0){
     const{bounds}=state.files[state.activeIdx];
     const wx=(e.clientX-r.left-state.panX)/state.zoom+bounds.minX;
@@ -824,51 +1418,61 @@ window.addEventListener('mousemove',e=>{
     document.getElementById('coords').textContent=`x: ${wx.toFixed(2)}  y: ${wy.toFixed(2)}`;
   }
 });
+
 wrap.addEventListener('wheel',e=>{
   e.preventDefault();
-  const r=canvas.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
+  const r=wrap.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
   const f=e.deltaY<0?1.12:0.89,nz=Math.max(0.005,Math.min(state.zoom*f,500));
-  state.panX=mx-(mx-state.panX)*(nz/state.zoom);state.panY=my-(my-state.panY)*(nz/state.zoom);
-  state.zoom=nz;updateZoomUI();render();
+  state.panX=mx-(mx-state.panX)*(nz/state.zoom);
+  state.panY=my-(my-state.panY)*(nz/state.zoom);
+  state.zoom=nz;
+  updateZoomUI();scheduleRender();
 },{passive:false});
+
 let lastT=null;
 wrap.addEventListener('touchstart',e=>{lastT=[...e.touches];},{passive:true});
 wrap.addEventListener('touchmove',e=>{
   e.preventDefault();const t=[...e.touches];
-  if(t.length===1&&lastT?.length===1){state.panX+=t[0].clientX-lastT[0].clientX;state.panY+=t[0].clientY-lastT[0].clientY;render();}
+  if(t.length===1&&lastT?.length===1){state.panX+=t[0].clientX-lastT[0].clientX;state.panY+=t[0].clientY-lastT[0].clientY;scheduleRender();}
   else if(t.length===2&&lastT?.length===2){
     const pd=Math.hypot(lastT[0].clientX-lastT[1].clientX,lastT[0].clientY-lastT[1].clientY);
     const nd=Math.hypot(t[0].clientX-t[1].clientX,t[0].clientY-t[1].clientY);
-    const mx=(t[0].clientX+t[1].clientX)/2-canvas.getBoundingClientRect().left;
-    const my=(t[0].clientY+t[1].clientY)/2-canvas.getBoundingClientRect().top;
+    const mx=(t[0].clientX+t[1].clientX)/2-wrap.getBoundingClientRect().left;
+    const my=(t[0].clientY+t[1].clientY)/2-wrap.getBoundingClientRect().top;
     const nz=Math.max(0.005,Math.min(state.zoom*(nd/pd),500));
     state.panX=mx-(mx-state.panX)*(nz/state.zoom);state.panY=my-(my-state.panY)*(nz/state.zoom);
-    state.zoom=nz;updateZoomUI();render();
+    state.zoom=nz;updateZoomUI();scheduleRender();
   }
   lastT=t;
 },{passive:false});
-document.getElementById('zoomIn').onclick=()=>{state.zoom=Math.min(state.zoom*1.25,500);updateZoomUI();render();};
-document.getElementById('zoomOut').onclick=()=>{state.zoom=Math.max(state.zoom*0.8,0.005);updateZoomUI();render();};
+
+document.getElementById('zoomIn').onclick=()=>{state.zoom=Math.min(state.zoom*1.25,500);updateZoomUI();scheduleRender();};
+document.getElementById('zoomOut').onclick=()=>{state.zoom=Math.max(state.zoom*0.8,0.005);updateZoomUI();scheduleRender();};
 document.getElementById('fitBtn').onclick=fitToScreen;
 
-document.getElementById('fileInput').addEventListener('change',e=>{
-  [...e.target.files].forEach(f=>{const r=new FileReader();r.onload=ev=>loadDXF(f.name,ev.target.result);r.readAsText(f);});
-  e.target.value='';
-});
-document.getElementById('fileInputGTK').addEventListener('change',e=>{
-  [...e.target.files].forEach(f=>{const r=new FileReader();r.onload=ev=>loadGTK(f.name,ev.target.result);r.readAsText(f);});
-  e.target.value='';
-});
+function processFiles(files) {
+  [...files].forEach(f => {
+    const r = new FileReader();
+    const nm = f.name.toLowerCase();
+    r.onload = ev => {
+      if(nm.endsWith('.dxf')) loadDXF(f.name, ev.target.result);
+      else if(nm.endsWith('.gtk')) loadGTK(f.name, ev.target.result);
+      else if(nm.endsWith('.zcc')) loadZCC(f.name, ev.target.result);
+    };
+    r.readAsText(f);
+  });
+}
 
-// Drop zone — auto-detect by extension
+document.getElementById('fileInput').addEventListener('change', e => { processFiles(e.target.files); e.target.value=''; });
+document.getElementById('fileInputGTK').addEventListener('change', e => { processFiles(e.target.files); e.target.value=''; });
+document.getElementById('fileInputZCC').addEventListener('change', e => { processFiles(e.target.files); e.target.value=''; });
+
 wrap.addEventListener('dragover',e=>{e.preventDefault();wrap.style.outline='2px dashed var(--accent)';});
 wrap.addEventListener('dragleave',()=>{wrap.style.outline='';});
 wrap.addEventListener('drop',e=>{
-  e.preventDefault();wrap.style.outline='';
-  [...e.dataTransfer.files].forEach(f=>{
-    if(f.name.toLowerCase().endsWith('.dxf')){const r=new FileReader();r.onload=ev=>loadDXF(f.name,ev.target.result);r.readAsText(f);}
-    else if(f.name.toLowerCase().endsWith('.gtk')){const r=new FileReader();r.onload=ev=>loadGTK(f.name,ev.target.result);r.readAsText(f);}
-  });
+  e.preventDefault();
+  wrap.style.outline='';
+  processFiles(e.dataTransfer.files);
 });
 
 new ResizeObserver(resize).observe(wrap);
